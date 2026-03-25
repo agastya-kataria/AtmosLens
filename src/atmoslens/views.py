@@ -4,6 +4,7 @@ import json
 
 import panel as pn
 
+from atmoslens.config import APP_DESCRIPTION, APP_NAME, APP_TAGLINE, HOLOVIZ_GSOC_WIKI, HOLOVIZ_UMBRELLA_REPO
 from atmoslens.lumen_support import build_activity_pipeline, build_route_pipeline, pipeline_summary_spec
 from atmoslens.plotting import build_pollution_map, build_route_plot, build_scenario_matrix_plot, build_timeline_plot
 from atmoslens.profiles import pollutant_meta
@@ -20,6 +21,9 @@ APP_CSS = """
 body {
   background: linear-gradient(180deg, #fffaf0 0%, #f8fafc 55%, #f1f5f9 100%);
 }
+.bk-Column.atmoslens-sidebar > div {
+  gap: 12px;
+}
 .atmoslens-note code {
   background: rgba(15, 23, 42, 0.08);
   padding: 0.1rem 0.35rem;
@@ -30,6 +34,27 @@ body {
   border: 1px solid rgba(15,23,42,0.08);
   border-radius: 18px;
   box-shadow: 0 14px 36px rgba(15, 23, 42, 0.08);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.atmoslens-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.12);
+}
+.atmoslens-hero {
+  background: linear-gradient(135deg, rgba(15,118,110,0.1), rgba(217,119,6,0.08));
+  border: 1px solid rgba(15,23,42,0.08);
+  border-radius: 22px;
+  padding: 1.15rem 1.25rem;
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.08);
+}
+.atmoslens-hero strong {
+  color: #0f172a;
+}
+.atmoslens-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  color: #64748b;
 }
 """
 
@@ -52,6 +77,16 @@ def _card_html(title: str, body: str, *, accent: str, eyebrow: str) -> str:
       <div style="font-size:0.72rem; letter-spacing:0.12em; text-transform:uppercase; color:#64748b; margin-bottom:0.35rem;">{eyebrow}</div>
       <div style="font-size:1.1rem; font-weight:700; color:#0f172a; margin-bottom:0.45rem;">{title}</div>
       <div style="font-size:0.95rem; line-height:1.5; color:#334155;">{body}</div>
+    </div>
+    """
+
+
+def _hero_html(title: str, body: str) -> str:
+    return f"""
+    <div class="atmoslens-hero">
+      <div class="atmoslens-kicker">Search Anywhere</div>
+      <div style="font-size:1.15rem; font-weight:700; color:#0f172a; margin-bottom:0.45rem;">{title}</div>
+      <div style="font-size:0.96rem; line-height:1.55; color:#334155;">{body}</div>
     </div>
     """
 
@@ -103,6 +138,7 @@ def render_recommendation_card(state: AtmosLensState):
         f"border-radius:999px; background:{verdict_colors[result.recommendation.verdict]}; color:white; "
         f"font-weight:700;'>{result.recommendation.verdict}</div>"
         f"<p style='margin:0 0 0.75rem 0;'>{result.recommendation.explanation}</p>"
+        f"<div><strong>Lens:</strong> {state.profile} · {state.activity} · {pollutant_meta(state.pollutant)['label']} · {state.horizon_hours}h horizon</div>"
         f"<div><strong>Decision point:</strong> {state.location_name} ({state.location_lat:.3f}, {state.location_lon:.3f})</div>"
         f"<div><strong>Best window:</strong> {result.recommendation.best_window_label}</div>"
         f"<div><strong>Current {meta['label']}:</strong> {_format_value(result.recommendation.current_value)} {result.recommendation.unit}</div>"
@@ -122,6 +158,7 @@ def render_recommendation_card(state: AtmosLensState):
 def render_snapshot_cards(state: AtmosLensState):
     timestamp = state.current_timestamp()
     cards = []
+    op = state.operational_status()
 
     try:
         activity = state.activity_result()
@@ -155,6 +192,26 @@ def render_snapshot_cards(state: AtmosLensState):
         )
     except Exception as exc:  # noqa: BLE001
         cards.append(_state_error_panel("Commute Exposure", state, str(exc)))
+
+    readiness_color = "#0f766e" if op["ready"] else "#d97706"
+    readiness_title = "Forecast Ready" if op["ready"] else "Refresh Recommended"
+    readiness_body = (
+        f"<div><strong>Loaded cube:</strong> {op['loaded_region']}</div>"
+        f"<div><strong>Target region:</strong> {op['target_region']}</div>"
+        f"<div><strong>Location in bounds:</strong> {'Yes' if op['location_ready'] else 'No'}</div>"
+        f"<div><strong>Route in bounds:</strong> {'Yes' if op['route_ready'] else 'No'}</div>"
+    )
+    cards.append(
+        pn.pane.HTML(
+            _card_html(
+                readiness_title,
+                readiness_body,
+                accent=readiness_color,
+                eyebrow="Operational Status",
+            ),
+            min_height=130,
+        )
+    )
 
     return pn.Row(*cards, sizing_mode="stretch_width")
 
@@ -327,7 +384,7 @@ def _summary_pane(state: AtmosLensState):
 def build_sidebar(state: AtmosLensState):
     refresh_button = pn.widgets.Button(
         name="Refresh Forecast Cube",
-        button_type="primary",
+        button_type="default",
         icon="refresh",
         sizing_mode="stretch_width",
     )
@@ -354,38 +411,60 @@ def build_sidebar(state: AtmosLensState):
         state.param.status_message,
     )
 
+    hero = pn.bind(
+        lambda *_: pn.pane.HTML(
+            _hero_html(
+                f"{state.location_name} · {state.profile} · {state.activity}",
+                (
+                    f"<strong>Target region:</strong> {state.region_name}<br>"
+                    f"<strong>Loaded cube:</strong> {state.summary()['region_name']}<br>"
+                    f"Type any city, district, or postcode and press <strong>Enter</strong> to refresh the analysis."
+                ),
+            )
+        ),
+        state.param.location_name,
+        state.param.profile,
+        state.param.activity,
+        state.param.region_name,
+        state.param.dataset_revision,
+    )
+
     location_search = pn.widgets.TextInput(
         name="Search place",
-        placeholder="Type any city, district, or postcode",
+        placeholder="Type any city, district, or postcode and press Enter",
     )
-    location_search_button = pn.widgets.Button(name="Resolve place", button_type="primary", icon="map-search")
-    location_matches = pn.widgets.RadioBoxGroup(name="Location matches", options={}, visible=False)
-    location_search_note = pn.pane.Markdown("", css_classes=["atmoslens-note"])
+    location_search_button = pn.widgets.Button(name="Analyze Place", button_type="primary", icon="search")
+    location_matches = pn.widgets.Select(name="Other matches", options={}, visible=False)
+    location_search_note = pn.pane.Markdown(
+        "Search actions refresh the forecast cube automatically. Advanced geometry edits stay local until you refresh.",
+        css_classes=["atmoslens-note"],
+    )
     location_select_guard = {"active": False}
 
-    def _search_location(_):
+    def _set_match_widget(widget, labels: list[str]) -> None:
+        widget.options = {label: index for index, label in enumerate(labels)}
+        widget.visible = len(labels) > 1
+
+    def _search_location(_=None):
         try:
             labels = state.search_location(location_search.value)
         except Exception as exc:  # noqa: BLE001
             location_select_guard["active"] = False
-            location_matches.options = {}
-            location_matches.visible = False
+            _set_match_widget(location_matches, [])
             location_search_note.object = f"**Search error**\n\n{exc}"
             state.status_message = f"Search failed: {exc}"
             _notify("error", str(exc))
             return
 
         try:
-            location_matches.options = {label: index for index, label in enumerate(labels)}
+            _set_match_widget(location_matches, labels)
             location_select_guard["active"] = True
             location_matches.value = 0 if labels else None
             location_select_guard["active"] = False
-            location_matches.visible = bool(labels)
             _notify("info", "Fetching a live forecast cube for the searched place...")
             state.refresh_dataset()
             location_search_note.object = (
-                "Top geocoding matches are shown below. The first result is selected automatically, the forecast cube is refreshed immediately, "
-                "and you can click another match if the query was ambiguous."
+                f"Using **{state.location_name}** as the decision point. The first geocoding match was applied and the forecast cube was refreshed automatically."
             )
             _notify("success", f"Resolved {state.location_name} and loaded a live forecast cube for that area.")
         except Exception as exc:  # noqa: BLE001
@@ -393,6 +472,11 @@ def build_sidebar(state: AtmosLensState):
             location_search_note.object = f"**Search error**\n\n{exc}"
             state.status_message = f"Search failed: {exc}"
             _notify("error", str(exc))
+
+    def _search_location_enter(event):
+        if event.new <= event.old:
+            return
+        _search_location()
 
     def _select_location(event):
         if location_select_guard["active"] or event.new is None:
@@ -411,38 +495,42 @@ def build_sidebar(state: AtmosLensState):
             _notify("error", str(exc))
 
     location_search_button.on_click(_search_location)
+    location_search.param.watch(_search_location_enter, "enter_pressed")
     location_matches.param.watch(_select_location, "value")
 
     route_start_search = pn.widgets.TextInput(
         name="Search route start",
-        placeholder="Type a commute origin city, district, or postcode",
+        placeholder="Origin city, district, or postcode",
     )
-    route_start_button = pn.widgets.Button(name="Resolve start", button_type="primary", icon="route")
-    route_start_matches = pn.widgets.RadioBoxGroup(name="Route start matches", options={}, visible=False)
+    route_start_button = pn.widgets.Button(name="Resolve Start", button_type="primary", icon="route")
+    route_start_matches = pn.widgets.Select(name="Start matches", options={}, visible=False)
     route_start_note = pn.pane.Markdown("", css_classes=["atmoslens-note"])
     route_start_select_guard = {"active": False}
 
-    def _search_route_start(_):
+    def _search_route_start(_=None):
         try:
             labels = state.search_route_start(route_start_search.value)
         except Exception as exc:  # noqa: BLE001
             route_start_select_guard["active"] = False
-            route_start_matches.options = {}
-            route_start_matches.visible = False
+            _set_match_widget(route_start_matches, [])
             route_start_note.object = f"**Start search error**\n\n{exc}"
             state.status_message = f"Route start search failed: {exc}"
             _notify("error", str(exc))
             return
 
-        route_start_matches.options = {label: index for index, label in enumerate(labels)}
+        _set_match_widget(route_start_matches, labels)
         route_start_select_guard["active"] = True
         route_start_matches.value = 0 if labels else None
         route_start_select_guard["active"] = False
-        route_start_matches.visible = bool(labels)
         route_start_note.object = (
-            "The top match was applied to the route start and selected below. Search the route end next, then load the corridor forecast."
+            f"Using **{state.route_start_name}** as the route start. Search the destination next and the corridor will refresh automatically."
         )
         _notify("success", f"Resolved route start as {state.route_start_name}.")
+
+    def _search_route_start_enter(event):
+        if event.new <= event.old:
+            return
+        _search_route_start()
 
     def _select_route_start(event):
         if route_start_select_guard["active"] or event.new is None:
@@ -456,49 +544,50 @@ def build_sidebar(state: AtmosLensState):
             _notify("error", str(exc))
 
     route_start_button.on_click(_search_route_start)
+    route_start_search.param.watch(_search_route_start_enter, "enter_pressed")
     route_start_matches.param.watch(_select_route_start, "value")
 
     route_end_search = pn.widgets.TextInput(
         name="Search route end",
-        placeholder="Type a commute destination city, district, or postcode",
+        placeholder="Destination city, district, or postcode",
     )
-    route_end_button = pn.widgets.Button(name="Resolve end", button_type="primary", icon="route-2")
-    route_end_matches = pn.widgets.RadioBoxGroup(name="Route end matches", options={}, visible=False)
+    route_end_button = pn.widgets.Button(name="Resolve End", button_type="primary", icon="route-2")
+    route_end_matches = pn.widgets.Select(name="End matches", options={}, visible=False)
     route_end_note = pn.pane.Markdown("", css_classes=["atmoslens-note"])
     route_end_select_guard = {"active": False}
 
-    def _search_route_end(_):
+    def _search_route_end(_=None):
         try:
             labels = state.search_route_end(route_end_search.value)
         except Exception as exc:  # noqa: BLE001
             route_end_select_guard["active"] = False
-            route_end_matches.options = {}
-            route_end_matches.visible = False
+            _set_match_widget(route_end_matches, [])
             route_end_note.object = f"**End search error**\n\n{exc}"
             state.status_message = f"Route end search failed: {exc}"
             _notify("error", str(exc))
             return
 
         try:
-            route_end_matches.options = {label: index for index, label in enumerate(labels)}
+            _set_match_widget(route_end_matches, labels)
             route_end_select_guard["active"] = True
             route_end_matches.value = 0 if labels else None
             route_end_select_guard["active"] = False
-            route_end_matches.visible = bool(labels)
-            route_end_note.object = (
-                "The top match was applied to the route end and selected below. The route corridor forecast is being refreshed automatically."
-            )
             _notify("info", "Refreshing the route corridor forecast...")
             state.refresh_dataset()
             route_end_note.object = (
                 f"Using **{state.route_end_name}** as the route end. The forecast cube was refreshed for the current route corridor automatically."
             )
-            _notify("success", f"Resolved route end as {state.route_end_name} and refreshed the route corridor forecast.")
+            _notify("success", f"Resolved {state.route_end_name} and refreshed the route corridor forecast.")
         except Exception as exc:  # noqa: BLE001
             route_end_select_guard["active"] = False
             route_end_note.object = f"**End search error**\n\n{exc}"
             state.status_message = f"Route end search failed: {exc}"
             _notify("error", str(exc))
+
+    def _search_route_end_enter(event):
+        if event.new <= event.old:
+            return
+        _search_route_end()
 
     def _select_route_end(event):
         if route_end_select_guard["active"] or event.new is None:
@@ -516,10 +605,11 @@ def build_sidebar(state: AtmosLensState):
             _notify("error", str(exc))
 
     route_end_button.on_click(_search_route_end)
+    route_end_search.param.watch(_search_route_end_enter, "enter_pressed")
     route_end_matches.param.watch(_select_route_end, "value")
     route_refresh_button = pn.widgets.Button(
         name="Load Route Corridor Forecast",
-        button_type="primary",
+        button_type="default",
         icon="navigation",
         sizing_mode="stretch_width",
     )
@@ -576,7 +666,6 @@ def build_sidebar(state: AtmosLensState):
     route_controls = pn.Param(
         state,
         parameters=[
-            "route_name",
             "route_start_name",
             "route_start_lat",
             "route_start_lon",
@@ -586,7 +675,6 @@ def build_sidebar(state: AtmosLensState):
             "route_duration_minutes",
         ],
         widgets={
-            "route_name": pn.widgets.TextInput,
             "route_start_name": pn.widgets.TextInput,
             "route_start_lat": pn.widgets.FloatInput,
             "route_start_lon": pn.widgets.FloatInput,
@@ -598,36 +686,39 @@ def build_sidebar(state: AtmosLensState):
         show_name=False,
     )
 
-    analysis_controls = pn.Param(
+    quick_controls = pn.Param(
         state,
-        parameters=["profile", "activity", "pollutant", "advisor_mode", "horizon_hours", "map_hour_index"],
+        parameters=["profile", "activity", "pollutant", "horizon_hours"],
         widgets={
             "profile": pn.widgets.RadioButtonGroup,
             "activity": pn.widgets.Select,
             "pollutant": pn.widgets.Select,
-            "advisor_mode": pn.widgets.Select,
             "horizon_hours": pn.widgets.RadioButtonGroup,
-            "map_hour_index": pn.widgets.IntSlider,
         },
         show_name=False,
     )
 
-    guidance = pn.pane.Markdown(
-        """
-        ## AtmosLens
-
-        Type a place into the search bars below to resolve a decision point or commute anywhere in the world.
-        AtmosLens geocodes the search, recenters the forecast region, and can load a new xarray-backed forecast cube for that area.
-        """,
-        css_classes=["atmoslens-note"],
+    advanced_analysis_controls = pn.Param(
+        state,
+        parameters=["advisor_mode", "map_hour_index", "auto_sync_controls"],
+        widgets={
+            "advisor_mode": pn.widgets.Select,
+            "map_hour_index": pn.widgets.IntSlider,
+            "auto_sync_controls": pn.widgets.Checkbox,
+        },
+        show_name=False,
     )
 
     return pn.Column(
-        guidance,
-        pn.Card(region_controls, refresh_button, title="Forecast Region", collapsed=False),
+        hero,
         pn.Card(
-            pn.Column(location_search, location_search_button, location_matches, location_search_note, location_controls),
-            title="Decision Point Search",
+            pn.Column(
+                pn.Row(location_search, location_search_button),
+                location_matches,
+                location_search_note,
+                quick_controls,
+            ),
+            title="Quick Start",
             collapsed=False,
         ),
         pn.Card(
@@ -640,21 +731,35 @@ def build_sidebar(state: AtmosLensState):
                 route_end_button,
                 route_end_matches,
                 route_end_note,
-                route_refresh_button,
-                route_controls,
             ),
             title="Commute Route Search",
+            collapsed=False,
+        ),
+        pn.Card(
+            pn.Column(
+                pn.pane.Markdown(
+                    "Advanced changes keep related fields in sync automatically. Refresh the cube after manual geometry edits.",
+                    css_classes=["atmoslens-note"],
+                ),
+                refresh_button,
+                route_refresh_button,
+                advanced_analysis_controls,
+                region_controls,
+                location_controls,
+                route_controls,
+            ),
+            title="Professional Controls",
             collapsed=True,
         ),
-        pn.Card(analysis_controls, title="Decision Controls", collapsed=True),
-        summary,
+        pn.Card(summary, title="Dataset Status", collapsed=True),
+        css_classes=["atmoslens-sidebar"],
     )
 
 
 def build_app(state: AtmosLensState | None = None):
     state = state or AtmosLensState()
     template = pn.template.FastListTemplate(
-        title="AtmosLens",
+        title=APP_NAME,
         accent_base_color="#0f766e",
         header_background="#0f172a",
         theme_toggle=False,
@@ -758,14 +863,15 @@ def build_app(state: AtmosLensState | None = None):
     )
 
     intro = pn.pane.Markdown(
-        """
-        # AtmosLens — Air Quality Decision Copilot
+        f"""
+        # {APP_NAME} — {APP_TAGLINE}
 
-        A HoloViz app that turns **xarray-backed air-quality forecasts** into personal decisions:
+        A HoloViz ecosystem application built using the libraries surfaced through **[holoviz/holoviz]({HOLOVIZ_UMBRELLA_REPO})**.
+        AtmosLens turns **xarray-backed air-quality forecasts** into personal decisions:
         when to run, when to ventilate, and which commute window minimizes exposure.
 
-        The app now supports global presets plus fully editable coordinates, route endpoints, and region refreshes,
-        and it now resolves places from search bars instead of forcing users through fixed dropdowns.
+        The app supports global typed search, route-aware corridor analysis, cross-profile decision comparison,
+        and a Lumen-oriented bridge designed to motivate the official **[Lumen + Xarray Integration]({HOLOVIZ_GSOC_WIKI})** project.
         """,
         css_classes=["atmoslens-note"],
     )

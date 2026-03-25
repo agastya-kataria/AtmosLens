@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urlencode
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import numpy as np
@@ -276,10 +278,28 @@ def _dataset_path(path: str | Path | None = None) -> Path:
     return Path(path).expanduser().resolve() if path else DEFAULT_DATA_PATH
 
 
-def _fetch_json(url: str, timeout: int = 90) -> dict | list:
+def _fetch_json(url: str, timeout: int = 90, retries: int = 3) -> dict | list:
     request = Request(url, headers={"User-Agent": "AtmosLens/0.1"})
-    with urlopen(request, timeout=timeout) as response:
-        return json.load(response)
+    for attempt in range(retries):
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                return json.load(response)
+        except HTTPError as exc:
+            retryable = exc.code in {429, 500, 502, 503, 504}
+            if retryable and attempt < retries - 1:
+                time.sleep(1.2 * (attempt + 1))
+                continue
+            if exc.code == 429:
+                raise ValueError(
+                    "The upstream forecast service is temporarily rate-limiting requests. Wait a few seconds and try again."
+                ) from exc
+            raise ValueError(f"Upstream service returned HTTP {exc.code}.") from exc
+        except URLError as exc:
+            if attempt < retries - 1:
+                time.sleep(1.2 * (attempt + 1))
+                continue
+            raise ValueError("Could not reach the upstream forecast service.") from exc
+    raise ValueError("Could not fetch data from the upstream forecast service.")
 
 
 def _chunked(items: list[tuple[float, float]], size: int) -> list[list[tuple[float, float]]]:

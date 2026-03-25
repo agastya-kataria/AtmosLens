@@ -30,5 +30,7 @@ atmoslens = { path = ".", editable = true }
 
 [tasks]
 fetch = "python -m atmoslens.datasets --output data/sample_forecast.nc"
+start = "panel serve app.py --autoreload --show"
 test = "pytest"
+lint = "python -m compileall src app.py tests"
 run = "panel serve app.py --autoreload --show"

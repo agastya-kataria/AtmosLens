@@ -1,6 +1,6 @@
 # AtmosLens
 
-AtmosLens is an air-quality decision copilot built with the HoloViz ecosystem surfaced through [`holoviz/holoviz`](https://github.com/holoviz/holoviz). It turns a real xarray-backed forecast cube into recommendations such as when to run, when to ventilate, and which commute departure window minimizes exposure, and now supports typed global place search, editable coordinates, and route endpoints.
+AtmosLens is a HoloViz ecosystem application built using the libraries surfaced through [`holoviz/holoviz`](https://github.com/holoviz/holoviz), with implementation centered on Lumen, Panel, HoloViews, GeoViews, hvPlot, Datashader, Param, and Colorcet over xarray-backed air-quality data. It turns a real forecast cube into recommendations such as when to run, when to ventilate, and which commute departure window minimizes exposure, and supports typed global place search, compact default controls, and professional-grade advanced controls that stay in sync automatically.
 
 ![AtmosLens app preview](assets/atmoslens-preview.svg)
 
@@ -18,6 +18,8 @@ AtmosLens closes that gap:
 
 This repo is intentionally scoped as a strong March 31 artifact: something a HoloViz mentor can open, run, understand quickly, and recognize as a natural bridge toward native Lumen + xarray support.
 
+The strategic purpose is explicit: AtmosLens is the first vertical slice and public proof-of-need for the official HoloViz GSoC 2026 project **Lumen + Xarray Integration**, which the HoloViz project list describes as a high-priority 350-hour effort focused on native xarray support, an `XarraySource`, and explicit query semantics in Lumen. Sources: [HoloViz 2026 GSoC wiki](https://github.com/holoviz/holoviz/wiki/2026-GSoC-Project-List), [GSoC timeline](https://developers.google.com/open-source/gsoc/timeline).
+
 ## What the app shows
 
 - **Activity Safety Advisor**: `Good`, `Caution`, or `Avoid`, plus the best time window and a short explanation.
@@ -26,7 +28,8 @@ This repo is intentionally scoped as a strong March 31 artifact: something a Hol
 - **Decision Matrix**: compares profiles and activities side by side at the same location to show that the recommendation engine generalizes beyond a single query.
 - **Recommendation Card**: concise user-facing guidance instead of a raw forecast dump.
 - **Route / Commute Exposure Window**: preset or search-driven route endpoints sampled against the same gridded forecast across multiple departure times.
-- **Global Search + Region Refresh**: type a city, district, or postcode anywhere on Earth, refresh the forecast cube, and reuse the same xarray pipeline.
+- **Global Search + Region Refresh**: type a city, district, or postcode anywhere on Earth, press Enter, and refresh the forecast cube through the same xarray pipeline.
+- **Professional Controls**: advanced region, route, and analysis parameters stay linked automatically while remaining hidden from the default user flow.
 
 The preview above uses the real Dublin sample cube with `Ozone` selected because it produces a more legible risk gradient than PM2.5 on the fetched March 25 forecast.
 
@@ -69,7 +72,7 @@ The HoloViz umbrella repo describes its core projects as `Panel`, `hvPlot`, `Hol
 
 ```bash
 pixi install
-pixi run run
+pixi run start
 ```
 
 ### Option 2: pip + venv
@@ -88,7 +91,14 @@ The repo includes `data/sample_forecast.nc`. To regenerate it from the Open-Mete
 .venv/bin/atmoslens-fetch --output data/sample_forecast.nc
 ```
 
-Inside the app, you can type a decision point into the search bar to geocode it anywhere in the world and fetch a live xarray forecast cube for that area. Route searches also auto-fit a local corridor, and `Load Route Corridor Forecast` refreshes the commute cube after you resolve both endpoints.
+Inside the app, the default flow is:
+
+- type a decision point and press Enter
+- review the refreshed recommendation, map, timeline, and decision matrix
+- optionally resolve a commute origin and destination
+- open `Professional Controls` only if you need to override the default geometry or analysis settings
+
+Route searches auto-fit a local corridor, and `Load Route Corridor Forecast` refreshes the commute cube after manual edits. The fetch layer also retries short upstream failures and surfaces rate-limit errors clearly when the public API is busy.
 
 ## Data provenance
 
@@ -103,9 +113,11 @@ The fetch path intentionally builds a small regular grid around a real metro reg
 ## Repo layout
 
 - [`app.py`](app.py): Panel entrypoint
+- [`ENGINEERING_SPEC.md`](ENGINEERING_SPEC.md): mentor-facing March 31 engineering plan and project framing
 - [`pyproject.toml`](pyproject.toml): pip-friendly project definition
 - [`pixi.toml`](pixi.toml): conda-forge / Pixi environment
 - [`src/atmoslens/datasets.py`](src/atmoslens/datasets.py): real-data fetch and dataset normalization
+- [`src/atmoslens/config.py`](src/atmoslens/config.py): app framing, defaults, and ecosystem links
 - [`src/atmoslens/profiles.py`](src/atmoslens/profiles.py): health profiles, activities, thresholds
 - [`src/atmoslens/scoring.py`](src/atmoslens/scoring.py): best-window scoring and verdict logic
 - [`src/atmoslens/exposure.py`](src/atmoslens/exposure.py): route sampling and departure-time exposure ranking
@@ -126,7 +138,7 @@ The fetch path intentionally builds a small regular grid around a real metro reg
 
 Current local status:
 
-- `10 passed` on Python `3.12.12`
+- `15 passed` on Python `3.12.12`
 - app object verified by importing `build_app()` and constructing the `FastListTemplate`
 
 ## Demo framing for HoloViz / GSoC

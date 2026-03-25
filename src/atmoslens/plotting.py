@@ -57,9 +57,9 @@ def build_pollution_map(
     clim = _color_limits(frame)
     quadmesh = gv.QuadMesh(frame, crs=ccrs.PlateCarree())
     raster = quadmesh_rasterize(quadmesh, aggregator="mean", dynamic=False).opts(
-        width=820,
-        height=500,
-        alpha=0.86,
+        width=860,
+        height=520,
+        alpha=0.9,
         cmap=pollutant_cmap(pollutant),
         clim=clim,
         colorbar=True,
@@ -67,11 +67,17 @@ def build_pollution_map(
         clabel=f"{meta['label']} ({meta['unit']})",
         tools=["hover"],
     )
-    tiles = gv.tile_sources.CartoLight.opts(alpha=0.7)
+    tiles = gv.tile_sources.CartoLight.opts(alpha=0.62)
 
     active_location = pd.DataFrame(
         [{"name": location.name, "lat": location.lat, "lon": location.lon, "kind": "Decision point"}]
     )
+    point_glow = gv.Points(
+        active_location,
+        kdims=["lon", "lat"],
+        vdims=["name", "kind"],
+        crs=ccrs.PlateCarree(),
+    ).opts(size=32, fill_alpha=0.18, fill_color="#d97706", line_alpha=0)
     points = gv.Points(
         active_location,
         kdims=["lon", "lat"],
@@ -86,7 +92,7 @@ def build_pollution_map(
         marker="diamond",
     )
 
-    overlays = tiles * raster * points
+    overlays = tiles * raster * point_glow * points
     if route is not None:
         route_points = pd.DataFrame(
             [
@@ -106,11 +112,15 @@ def build_pollution_map(
             line_width=2,
             tools=["hover"],
         )
+        route_glow = gv.Path(
+            [[(lon, lat) for lat, lon in route.points]],
+            crs=ccrs.PlateCarree(),
+        ).opts(color="#f59e0b", line_width=10, alpha=0.14)
         route_path = gv.Path(
             [[(lon, lat) for lat, lon in route.points]],
             crs=ccrs.PlateCarree(),
-        ).opts(color="#0f172a", line_width=4, alpha=0.8)
-        overlays = overlays * route_path * route_markers
+        ).opts(color="#0f172a", line_width=4, alpha=0.82)
+        overlays = overlays * route_glow * route_path * route_markers
 
     return overlays.opts(toolbar="right", active_tools=["wheel_zoom"], show_legend=False)
 
@@ -132,13 +142,13 @@ def build_timeline_plot(
         y="value",
         line_width=3,
         color="#0f766e",
-        width=820,
-        height=330,
+        width=860,
+        height=340,
         ylabel=f"{meta['label']} ({meta['unit']})",
         xlabel="Forecast time",
         title="Forecast and decision window",
     )
-    markers = timeline.hvplot.scatter(x="time", y="value", color="#0f766e", size=50, alpha=0.7)
+    markers = timeline.hvplot.scatter(x="time", y="value", color="#0f766e", size=54, alpha=0.78)
     good_band = hv.HSpan(0, thresholds["good"]).opts(fill_color="#d7f4df", fill_alpha=0.55)
     caution_band = hv.HSpan(thresholds["good"], thresholds["caution"]).opts(
         fill_color="#fde7b2", fill_alpha=0.35
@@ -166,13 +176,13 @@ def build_route_plot(
         where="mid",
         line_width=3,
         color="#0f172a",
-        width=820,
-        height=330,
+        width=860,
+        height=340,
         ylabel=f"Mean {meta['label']} ({meta['unit']})",
         xlabel="Departure time",
         title="Departure-time route exposure",
     )
-    points = route_df.hvplot.scatter(x="departure", y="mean_value", color="#0f172a", size=55, alpha=0.75)
+    points = route_df.hvplot.scatter(x="departure", y="mean_value", color="#0f172a", size=60, alpha=0.8)
     good_band = hv.HSpan(0, thresholds["good"]).opts(fill_color="#d7f4df", fill_alpha=0.55)
     caution_band = hv.HSpan(thresholds["good"], thresholds["caution"]).opts(
         fill_color="#fde7b2", fill_alpha=0.35
@@ -191,7 +201,7 @@ def build_scenario_matrix_plot(matrix: pd.DataFrame):
     ).opts(
         width=620,
         height=280,
-        cmap=["#0f766e", "#f59e0b", "#dc2626"],
+        cmap=cc.CET_L17,
         clim=(0, 100),
         colorbar=True,
         colorbar_position="right",
