@@ -76,6 +76,27 @@ ACTIVITIES: dict[str, ActivityType] = {
         window_hours=1,
         description="Route-based, high-breathing-rate travel through traffic corridors.",
     ),
+    "Outdoor Dining": ActivityType(
+        name="Outdoor Dining",
+        label="Outdoor Dining",
+        threshold_multiplier=0.95,
+        window_hours=2,
+        description="Extended outdoor meals where air quality directly affects comfort and enjoyment.",
+    ),
+    "Children's Play": ActivityType(
+        name="Children's Play",
+        label="Children's Play",
+        threshold_multiplier=0.65,
+        window_hours=3,
+        description="Outdoor play for children who breathe faster relative to body mass and are more physiologically sensitive.",
+    ),
+    "Dog Walk": ActivityType(
+        name="Dog Walk",
+        label="Dog Walk",
+        threshold_multiplier=0.9,
+        window_hours=1,
+        description="Regular-pace outdoor walking with stops; moderate exertion, lower than running.",
+    ),
 }
 
 POLLUTANT_META: dict[str, dict[str, float | str]] = {
@@ -109,4 +130,38 @@ def adjusted_thresholds(pollutant: str, profile_name: str, activity_name: str) -
         "good": float(meta["good"]) * multiplier,
         "caution": float(meta["caution"]) * multiplier,
     }
+
+
+def health_guidance(score: float, activity_name: str, *, pollutant_label: str = "pollution") -> str:
+    """Return plain-language health guidance based on the decision score."""
+    activity_lower = activity_name.lower()
+    if score <= 20:
+        return (
+            f"Air quality is excellent for {activity_lower}. "
+            f"No precautions needed — enjoy the outdoors."
+        )
+    if score <= 35:
+        return (
+            f"Air quality is good for {activity_lower}. "
+            f"Most people can proceed without concern."
+        )
+    if score <= 55:
+        return (
+            f"Air quality is moderate. Sensitive individuals should consider shorter "
+            f"{activity_lower} sessions or moving to the recommended window."
+        )
+    if score <= 70:
+        return (
+            f"{pollutant_label} levels are elevated. Reduce prolonged outdoor exertion, "
+            f"especially for {activity_lower}. Prefer the cleaner window if possible."
+        )
+    if score <= 85:
+        return (
+            f"Air quality is unhealthy for {activity_lower}. Move indoors or reschedule. "
+            f"Sensitive groups should avoid outdoor exertion entirely."
+        )
+    return (
+        f"Air quality is hazardous. Avoid all outdoor {activity_lower}. "
+        f"Keep windows closed and use air filtration if available."
+    )
 

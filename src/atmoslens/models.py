@@ -66,6 +66,9 @@ class Recommendation:
     score: float
     current_value: float
     unit: str
+    who_guideline: str = ""
+    score_label: str = ""
+    health_guidance: str = ""
 
 
 @dataclass(frozen=True)

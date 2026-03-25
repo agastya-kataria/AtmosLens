@@ -23,7 +23,7 @@ DEFAULT_ADVISOR_MODE = "Any hour in horizon"
 DEFAULT_HORIZON_HOURS = 24
 
 PROFILE_OPTIONS = ["General", "Sensitive", "Asthma", "Outdoor Worker"]
-ACTIVITY_OPTIONS = ["Run", "Walk", "Ventilate", "Cycle Commute"]
+ACTIVITY_OPTIONS = ["Run", "Walk", "Ventilate", "Cycle Commute", "Outdoor Dining", "Children's Play", "Dog Walk"]
 ADVISOR_MODES = ["Any hour in horizon", "Morning", "Afternoon", "Evening", "Overnight"]
 HORIZON_OPTIONS = [12, 24, 36, 48]
 

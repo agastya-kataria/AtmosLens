@@ -5,8 +5,8 @@ import pandas as pd
 from atmoslens.datasets import DEFAULT_ROUTES, location_series
 from atmoslens.exposure import rank_route_departures
 from atmoslens.models import AnalysisRequest, AnalysisResult, Recommendation, RouteDefinition, TransformStep
-from atmoslens.profiles import adjusted_thresholds, get_activity, pollutant_meta
-from atmoslens.scoring import current_conditions, evaluate_windows, improvement_phrase
+from atmoslens.profiles import adjusted_thresholds, get_activity, health_guidance, pollutant_meta
+from atmoslens.scoring import current_conditions, evaluate_windows, improvement_phrase, score_interpretation, who_guideline_note
 
 
 def activity_pipeline_steps(request: AnalysisRequest) -> tuple[TransformStep, ...]:
@@ -86,20 +86,27 @@ def build_activity_result(ds, request: AnalysisRequest) -> AnalysisResult:
     thresholds = adjusted_thresholds(request.pollutant, request.profile_name, request.activity_name)
     pollutant = pollutant_meta(request.pollutant)
     activity = get_activity(request.activity_name)
+    best_score = float(best["score"])
+    guidance = health_guidance(best_score, request.activity_name, pollutant_label=str(pollutant["label"]))
+    who_note = who_guideline_note(request.pollutant)
     explanation = (
         f"{request.profile_name} thresholds rate the current {pollutant['label']} forecast at "
         f"{current['value']:.1f} {pollutant['unit']} at {request.location_name}, while the cleanest {activity.label.lower()} window "
-        f"falls at {best['label']} with a lower blended exposure score. "
-        f"{improvement_phrase(float(current['score']), float(best['score']))}"
+        f"falls at {best['label']} with a blended score of {best_score:.0f}/100 ({score_interpretation(best_score)}). "
+        f"{improvement_phrase(float(current['score']), best_score)} "
+        f"{guidance}"
     )
     recommendation = Recommendation(
         verdict=str(best["verdict"]),
         headline=f"Best time for {activity.label.lower()}: {best['label']}",
         explanation=explanation,
         best_window_label=str(best["label"]),
-        score=float(best["score"]),
+        score=best_score,
         current_value=float(current["value"]),
         unit=str(pollutant["unit"]),
+        who_guideline=who_note,
+        score_label=score_interpretation(best_score),
+        health_guidance=guidance,
     )
     timeline = [
         {"time": timestamp, "value": float(value)}
@@ -149,17 +156,23 @@ def build_route_result(ds, request: AnalysisRequest) -> AnalysisResult:
     )
     best = departures.sort_values("score", ascending=True).iloc[0]
     pollutant = pollutant_meta(request.pollutant)
+    route_best_score = float(best["score"])
+    route_guidance = health_guidance(route_best_score, "Cycle Commute", pollutant_label=str(pollutant["label"]))
     recommendation = Recommendation(
         verdict=str(best["verdict"]),
         headline=f"Best departure: {best['departure']:%H:%M}",
         explanation=(
             f"{route.description} AtmosLens samples the route geometry against the gridded forecast and "
-            f"finds the lowest blended {pollutant['label']} exposure for departures near {best['departure']:%H:%M}."
+            f"finds the lowest blended {pollutant['label']} exposure for departures near {best['departure']:%H:%M} "
+            f"({score_interpretation(route_best_score)}). {route_guidance}"
         ),
         best_window_label=f"{best['departure']:%H:%M}–{best['arrival']:%H:%M}",
-        score=float(best["score"]),
+        score=route_best_score,
         current_value=float(best["mean_value"]),
         unit=str(pollutant["unit"]),
+        who_guideline=who_guideline_note(request.pollutant),
+        score_label=score_interpretation(route_best_score),
+        health_guidance=route_guidance,
     )
     return AnalysisResult(
         request=request,

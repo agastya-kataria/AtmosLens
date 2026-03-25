@@ -65,20 +65,20 @@ def build_pollution_map(
         vdims=[meta["label"]],
         crs=ccrs.PlateCarree(),
     ).opts(
-        width=860,
-        height=520,
-        alpha=0.62,
+        frame_width=840,
+        frame_height=500,
+        alpha=0.65,
         cmap=pollutant_cmap(pollutant),
         clim=clim,
         colorbar=True,
-        title=f"{meta['label']} map for {timestamp:%a %d %b %H:%M} ({timezone_label})",
+        title=f"{meta['label']} — {timestamp:%a %d %b %H:%M} ({timezone_label})",
         clabel=f"{meta['label']} ({meta['unit']})",
         line_alpha=0,
         infer_projection=True,
         projection=ccrs.GOOGLE_MERCATOR,
         tools=["hover"],
     )
-    tiles = gv.tile_sources.CartoLight.opts(alpha=0.82)
+    tiles = gv.tile_sources.CartoLight.opts(alpha=0.85)
 
     active_location = pd.DataFrame(
         [{"name": location.name, "lat": location.lat, "lon": location.lon, "kind": "Decision point"}]
@@ -88,7 +88,7 @@ def build_pollution_map(
         kdims=["lon", "lat"],
         vdims=["name", "kind"],
         crs=ccrs.PlateCarree(),
-    ).opts(size=32, fill_alpha=0.18, fill_color="#d97706", line_alpha=0)
+    ).opts(size=36, fill_alpha=0.15, fill_color="#d97706", line_alpha=0)
     points = gv.Points(
         active_location,
         kdims=["lon", "lat"],
@@ -98,7 +98,7 @@ def build_pollution_map(
         size=16,
         line_color="#0f172a",
         fill_color="#d97706",
-        line_width=2,
+        line_width=2.5,
         tools=["hover"],
         marker="diamond",
     )
@@ -112,7 +112,7 @@ def build_pollution_map(
             kdims=["lon", "lat"],
             vdims=["name", "kind"],
             crs=ccrs.PlateCarree(),
-        ).opts(size=12, line_color="#0f172a", fill_color="#2563eb", line_width=2, tools=["hover"])
+        ).opts(size=13, line_color="#0f172a", fill_color="#2563eb", line_width=2, tools=["hover"])
         end_marker = gv.Points(
             pd.DataFrame(
                 [{"name": route.end_label or "End", "lat": route.points[-1][0], "lon": route.points[-1][1], "kind": "Route end"}]
@@ -120,11 +120,11 @@ def build_pollution_map(
             kdims=["lon", "lat"],
             vdims=["name", "kind"],
             crs=ccrs.PlateCarree(),
-        ).opts(size=12, line_color="#0f172a", fill_color="#f97316", line_width=2, tools=["hover"])
+        ).opts(size=13, line_color="#0f172a", fill_color="#f97316", line_width=2, tools=["hover"])
         route_glow = gv.Path(
             [[(lon, lat) for lat, lon in route.points]],
             crs=ccrs.PlateCarree(),
-        ).opts(color="#f59e0b", line_width=10, alpha=0.16)
+        ).opts(color="#f59e0b", line_width=12, alpha=0.14)
         route_path = gv.Path(
             [[(lon, lat) for lat, lon in route.points]],
             crs=ccrs.PlateCarree(),
@@ -172,21 +172,25 @@ def build_timeline_plot(
         y="value",
         line_width=3,
         color="#0f766e",
-        width=860,
-        height=340,
+        frame_width=840,
+        frame_height=320,
         ylabel=f"{meta['label']} ({meta['unit']})",
         xlabel=f"Forecast hour ({timezone_label})",
-        title="Forecast and decision window",
+        title=f"{meta['label']} forecast — best {activity_name.lower()} window highlighted",
     )
-    markers = timeline.hvplot.scatter(x="step", y="value", color="#0f766e", size=54, alpha=0.78)
+    markers = timeline.hvplot.scatter(x="step", y="value", color="#0f766e", size=48, alpha=0.72)
     good_band = hv.HSpan(0, thresholds["good"]).opts(fill_color="#d7f4df", fill_alpha=0.55)
     caution_band = hv.HSpan(thresholds["good"], thresholds["caution"]).opts(
         fill_color="#fde7b2", fill_alpha=0.35
     )
     top_value = max(float(timeline["value"].max()) * 1.1, float(thresholds["caution"]) * 1.2)
     avoid_band = hv.HSpan(thresholds["caution"], top_value).opts(fill_color="#f9c8c2", fill_alpha=0.25)
-    best_window = hv.VSpan(start_step - 0.45, end_step + 0.45).opts(fill_color="#d97706", fill_alpha=0.12)
-    return (good_band * caution_band * avoid_band * best_window * curve * markers).opts(
+    best_window = hv.VSpan(start_step - 0.45, end_step + 0.45).opts(fill_color="#d97706", fill_alpha=0.14)
+
+    good_label = hv.Text(0.5, float(thresholds["good"]) * 0.5, "Good", fontsize=9).opts(text_color="#15803d", text_alpha=0.6)
+    caution_label = hv.Text(0.5, (float(thresholds["good"]) + float(thresholds["caution"])) * 0.5, "Caution", fontsize=9).opts(text_color="#d97706", text_alpha=0.6)
+
+    return (good_band * caution_band * avoid_band * best_window * good_label * caution_label * curve * markers).opts(
         legend_position="top_left",
         xticks=xticks,
     )
@@ -220,20 +224,20 @@ def build_route_plot(
         where="mid",
         line_width=3,
         color="#0f172a",
-        width=860,
-        height=340,
+        frame_width=840,
+        frame_height=320,
         ylabel=f"Mean {meta['label']} ({meta['unit']})",
         xlabel=f"Departure hour ({timezone_label})",
-        title="Departure-time route exposure",
+        title=f"Route exposure by departure time — best departure highlighted",
     )
-    points = route_df.hvplot.scatter(x="step", y="mean_value", color="#0f172a", size=60, alpha=0.8)
+    points = route_df.hvplot.scatter(x="step", y="mean_value", color="#0f172a", size=54, alpha=0.78)
     good_band = hv.HSpan(0, thresholds["good"]).opts(fill_color="#d7f4df", fill_alpha=0.55)
     caution_band = hv.HSpan(thresholds["good"], thresholds["caution"]).opts(
         fill_color="#fde7b2", fill_alpha=0.35
     )
     upper = max(float(route_df["mean_value"].max()) * 1.15, float(thresholds["caution"]) * 1.2)
     avoid_band = hv.HSpan(thresholds["caution"], upper).opts(fill_color="#f9c8c2", fill_alpha=0.25)
-    best_window = hv.VSpan(best_index - 0.45, best_index + 0.45).opts(fill_color="#0f766e", fill_alpha=0.12)
+    best_window = hv.VSpan(best_index - 0.45, best_index + 0.45).opts(fill_color="#0f766e", fill_alpha=0.14)
     return (good_band * caution_band * avoid_band * best_window * line * points).opts(
         legend_position="top_left",
         xticks=xticks,
@@ -246,15 +250,15 @@ def build_scenario_matrix_plot(matrix: pd.DataFrame):
         kdims=["activity", "profile"],
         vdims=["score", "verdict", "best_window", "headline"],
     ).opts(
-        width=620,
-        height=280,
+        frame_width=620,
+        frame_height=300,
         cmap=cc.CET_L17,
         clim=(0, 100),
         colorbar=True,
         colorbar_position="right",
-        title="Profile and activity decision matrix",
+        title="Profile × activity decision matrix",
         tools=["hover"],
-        xrotation=15,
+        xrotation=25,
         line_color="#e2e8f0",
         toolbar="right",
     )

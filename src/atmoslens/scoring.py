@@ -117,3 +117,29 @@ def improvement_phrase(current_score: float, best_score: float) -> str:
     if delta < 25:
         return "Waiting materially cuts predicted exposure."
     return "The cleaner window is meaningfully better than going now."
+
+
+def score_interpretation(score: float) -> str:
+    """Short human-readable label for a decision score."""
+    if score <= 15:
+        return "Excellent"
+    if score <= 35:
+        return "Good"
+    if score <= 55:
+        return "Moderate"
+    if score <= 70:
+        return "Unhealthy for sensitive groups"
+    if score <= 85:
+        return "Unhealthy"
+    return "Hazardous"
+
+
+def who_guideline_note(pollutant: str) -> str:
+    """Return a short WHO air quality guideline reference for context."""
+    notes = {
+        "pm2_5": "WHO guideline: 15 µg/m³ (24-hour mean). Levels above this raise long-term health risk.",
+        "nitrogen_dioxide": "WHO guideline: 25 µg/m³ (24-hour mean). Traffic corridors often exceed this.",
+        "ozone": "WHO guideline: 100 µg/m³ (8-hour mean). Peak afternoon levels frequently surpass this in warm seasons.",
+        "european_aqi": "European AQI: 0–20 Good, 20–40 Fair, 40–60 Moderate, 60–80 Poor, 80–100 Very Poor, >100 Extremely Poor.",
+    }
+    return notes.get(pollutant, "")
