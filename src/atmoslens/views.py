@@ -99,14 +99,55 @@ def _error_panel(title: str, message: str):
     )
 
 
+def _busy_panel(title: str, message: str):
+    spinner = pn.indicators.LoadingSpinner(value=True, width=28, height=28, color="primary")
+    text = pn.pane.Markdown(
+        f"**{title}**\n\n{message}",
+        sizing_mode="stretch_width",
+    )
+    return pn.Row(spinner, text, sizing_mode="stretch_width")
+
+
 def _state_error_panel(title: str, state: AtmosLensState, message: str):
-    if "outside the current forecast cube" in message:
-        summary = state.summary()
+    op = state.operational_status()
+    if state.busy:
+        return _busy_panel(title, state.busy_message or "Refreshing the xarray-backed forecast cube for the current selection.")
+    if not op["cube_matches_target"]:
         return pn.pane.Alert(
             (
                 f"**{title}**\n\n"
-                f"The selection has moved to **{state.region_name}**, but the loaded cube is still **{summary['region_name']}**. "
+                f"The selection has moved to **{op['target_region']}**, but the loaded cube is still **{op['loaded_region']}**. "
                 f"AtmosLens needs to refresh the xarray forecast cube for the new area before it can score this view."
+            ),
+            alert_type="warning",
+            sizing_mode="stretch_width",
+        )
+    if not op["location_ready"] and ("Selected location" in message or title in {"Activity Safety Advisor", "Forecast Timeline", "Lumen Bridge"}):
+        return pn.pane.Alert(
+            (
+                f"**{title}**\n\n"
+                f"The loaded cube already matches **{op['loaded_region']}**, but the decision point is outside its bounds. "
+                f"Search again, edit the point, or refresh a forecast cube centered on the selected place."
+            ),
+            alert_type="warning",
+            sizing_mode="stretch_width",
+        )
+    if not op["route_commute_ready"]:
+        return pn.pane.Alert(
+            (
+                f"**{title}**\n\n"
+                f"The current route spans about **{op['route_distance_km']:.0f} km**, which is too large for AtmosLens' commute advisor. "
+                f"Choose a destination within roughly **160 km** or analyze the destination as a place instead."
+            ),
+            alert_type="warning",
+            sizing_mode="stretch_width",
+        )
+    if not op["route_ready"] and title in {"Map Snapshot", "Commute Exposure", "Commute Window"}:
+        return pn.pane.Alert(
+            (
+                f"**{title}**\n\n"
+                f"The loaded cube matches **{op['loaded_region']}**, but part of the commute corridor still falls outside it. "
+                f"Refresh a corridor cube or tighten the route endpoints."
             ),
             alert_type="warning",
             sizing_mode="stretch_width",
@@ -195,11 +236,16 @@ def render_snapshot_cards(state: AtmosLensState):
 
     readiness_color = "#0f766e" if op["ready"] else "#d97706"
     readiness_title = "Forecast Ready" if op["ready"] else "Refresh Recommended"
+    shift_line = ""
+    if not op["cube_matches_target"] or not op["location_ready"]:
+        shift_line = f"<div><strong>Selection shift from loaded cube:</strong> {op['selection_shift_km']:.0f} km</div>"
     readiness_body = (
         f"<div><strong>Loaded cube:</strong> {op['loaded_region']}</div>"
         f"<div><strong>Target region:</strong> {op['target_region']}</div>"
         f"<div><strong>Location in bounds:</strong> {'Yes' if op['location_ready'] else 'No'}</div>"
         f"<div><strong>Route in bounds:</strong> {'Yes' if op['route_ready'] else 'No'}</div>"
+        f"{shift_line}"
+        f"<div><strong>Commute corridor length:</strong> {op['route_distance_km']:.0f} km</div>"
     )
     cards.append(
         pn.pane.HTML(
@@ -219,20 +265,21 @@ def render_snapshot_cards(state: AtmosLensState):
 def render_map_panel(state: AtmosLensState):
     try:
         frame = state.current_map_frame()
+        op = state.operational_status()
         plot = build_pollution_map(
             frame,
             state.pollutant,
             state.current_timestamp(),
             location=state.current_location(),
-            route=state.current_route(),
+            route=state.current_route() if op["route_ready"] and op["route_commute_ready"] else None,
         )
         meta = pollutant_meta(state.pollutant)
         slice_min = float(frame.min())
         slice_max = float(frame.max())
         note = pn.pane.Markdown(
             (
-                f"**Spatial view.** GeoViews + hvPlot build the geographic layer, Datashader rasterizes the xarray slice, "
-                f"and the same cube is sampled again for the route overlay. Current cube: `{state.summary()['region_name']}`. "
+                f"**Spatial view.** GeoViews + HoloViews render the xarray slice directly over Carto tiles with a green-to-red risk ramp, "
+                f"and AtmosLens only overlays the commute corridor when the route is valid for the active cube. Current cube: `{state.summary()['region_name']}`. "
                 f"Current map slice ranges from `{_format_value(slice_min)}` to `{_format_value(slice_max)}` {meta['unit']}, "
                 f"with the color scale clipped to the 5th-95th percentile so global maps stay readable."
             ),
@@ -315,7 +362,7 @@ def render_bridge_panel(state: AtmosLensState):
         activity_pipeline = build_activity_pipeline(state.activity_result())
         route_pipeline = build_route_pipeline(state.route_result())
     except Exception as exc:  # noqa: BLE001
-        return _error_panel("Lumen Bridge", str(exc))
+        return _state_error_panel("Lumen Bridge", state, str(exc))
 
     explanation = pn.pane.Markdown(
         """
@@ -365,6 +412,7 @@ def render_bridge_panel(state: AtmosLensState):
 
 def _summary_pane(state: AtmosLensState):
     summary = state.summary()
+    status_text = state.busy_message if state.busy and state.busy_message else state.status_message
     return pn.pane.Markdown(
         (
             f"**Loaded cube**\n\n"
@@ -375,10 +423,18 @@ def _summary_pane(state: AtmosLensState):
             f"lon `{summary['lon_min']:.3f}` to `{summary['lon_max']:.3f}`\n"
             f"- Grid: `{summary['dims']['time']} x {summary['dims']['lat']} x {summary['dims']['lon']}`\n"
             f"- Pollutants: `{', '.join(summary['pollutants'])}`\n\n"
-            f"**Status**\n\n{state.status_message}"
+            f"**Status**\n\n{status_text}"
         ),
         css_classes=["atmoslens-note"],
     )
+
+
+def _run_with_busy(state: AtmosLensState, message: str, callback):
+    state.set_busy(message)
+    try:
+        return callback()
+    finally:
+        state.clear_busy()
 
 
 def build_sidebar(state: AtmosLensState):
@@ -392,7 +448,7 @@ def build_sidebar(state: AtmosLensState):
     def _refresh(_):
         try:
             _notify("info", "Fetching a new xarray forecast cube...")
-            state.refresh_dataset()
+            _run_with_busy(state, "Refreshing the forecast cube for the active analysis region...", state.refresh_dataset)
             _notify("success", state.status_message)
         except Exception as exc:  # noqa: BLE001
             state.status_message = f"Refresh failed: {exc}"
@@ -409,6 +465,8 @@ def build_sidebar(state: AtmosLensState):
         state.param.region_center_lon,
         state.param.forecast_timezone,
         state.param.status_message,
+        state.param.busy,
+        state.param.busy_message,
     )
 
     hero = pn.bind(
@@ -427,6 +485,7 @@ def build_sidebar(state: AtmosLensState):
         state.param.activity,
         state.param.region_name,
         state.param.dataset_revision,
+        state.param.busy,
     )
 
     location_search = pn.widgets.TextInput(
@@ -447,7 +506,7 @@ def build_sidebar(state: AtmosLensState):
 
     def _search_location(_=None):
         try:
-            labels = state.search_location(location_search.value)
+            labels = state.search_location_matches(location_search.value)
         except Exception as exc:  # noqa: BLE001
             location_select_guard["active"] = False
             _set_match_widget(location_matches, [])
@@ -462,16 +521,22 @@ def build_sidebar(state: AtmosLensState):
             location_matches.value = 0 if labels else None
             location_select_guard["active"] = False
             _notify("info", "Fetching a live forecast cube for the searched place...")
-            state.refresh_dataset()
+            _run_with_busy(
+                state,
+                "Refreshing the forecast cube for the searched place...",
+                lambda: state.load_location_search_result(0),
+            )
             location_search_note.object = (
                 f"Using **{state.location_name}** as the decision point. The first geocoding match was applied and the forecast cube was refreshed automatically."
             )
             _notify("success", f"Resolved {state.location_name} and loaded a live forecast cube for that area.")
         except Exception as exc:  # noqa: BLE001
             location_select_guard["active"] = False
-            location_search_note.object = f"**Search error**\n\n{exc}"
-            state.status_message = f"Search failed: {exc}"
-            _notify("error", str(exc))
+            location_search_note.object = (
+                f"**Search paused**\n\n{exc}\n\nAtmosLens kept the current loaded forecast cube and did not switch the active analysis."
+            )
+            state.status_message = f"Search paused: {exc}"
+            _notify("warning", str(exc))
 
     def _search_location_enter(event):
         if event.new <= event.old:
@@ -482,17 +547,22 @@ def build_sidebar(state: AtmosLensState):
         if location_select_guard["active"] or event.new is None:
             return
         try:
-            state.apply_location_search_result(int(event.new))
-            _notify("info", f"Using {state.location_name} as the decision point and refreshing the forecast cube...")
-            state.refresh_dataset()
+            _notify("info", "Refreshing the forecast cube for the selected place...")
+            _run_with_busy(
+                state,
+                "Refreshing the forecast cube for the selected place...",
+                lambda: state.load_location_search_result(int(event.new)),
+            )
             location_search_note.object = (
                 f"Using **{state.location_name}** as the decision point. The forecast cube was refreshed for that area automatically."
             )
             _notify("success", f"Loaded a live forecast cube for {state.location_name}.")
         except Exception as exc:  # noqa: BLE001
-            location_search_note.object = f"**Refresh error**\n\n{exc}"
-            state.status_message = f"Refresh failed after selecting a place: {exc}"
-            _notify("error", str(exc))
+            location_search_note.object = (
+                f"**Selection paused**\n\n{exc}\n\nAtmosLens kept the current loaded forecast cube and left the active analysis unchanged."
+            )
+            state.status_message = f"Selection paused: {exc}"
+            _notify("warning", str(exc))
 
     location_search_button.on_click(_search_location)
     location_search.param.watch(_search_location_enter, "enter_pressed")
@@ -509,7 +579,11 @@ def build_sidebar(state: AtmosLensState):
 
     def _search_route_start(_=None):
         try:
-            labels = state.search_route_start(route_start_search.value)
+            labels = _run_with_busy(
+                state,
+                "Resolving the route origin...",
+                lambda: state.search_route_start(route_start_search.value),
+            )
         except Exception as exc:  # noqa: BLE001
             route_start_select_guard["active"] = False
             _set_match_widget(route_start_matches, [])
@@ -536,7 +610,11 @@ def build_sidebar(state: AtmosLensState):
         if route_start_select_guard["active"] or event.new is None:
             return
         try:
-            state.apply_route_start_search_result(int(event.new))
+            _run_with_busy(
+                state,
+                "Applying the selected route origin...",
+                lambda: state.apply_route_start_search_result(int(event.new)),
+            )
             route_start_note.object = f"Using **{state.route_start_name}** as the current route start."
         except Exception as exc:  # noqa: BLE001
             route_start_note.object = f"**Start selection error**\n\n{exc}"
@@ -558,7 +636,7 @@ def build_sidebar(state: AtmosLensState):
 
     def _search_route_end(_=None):
         try:
-            labels = state.search_route_end(route_end_search.value)
+            labels = state.search_route_end_matches(route_end_search.value)
         except Exception as exc:  # noqa: BLE001
             route_end_select_guard["active"] = False
             _set_match_widget(route_end_matches, [])
@@ -573,16 +651,22 @@ def build_sidebar(state: AtmosLensState):
             route_end_matches.value = 0 if labels else None
             route_end_select_guard["active"] = False
             _notify("info", "Refreshing the route corridor forecast...")
-            state.refresh_dataset()
+            _run_with_busy(
+                state,
+                "Refreshing the forecast cube for the resolved route corridor...",
+                lambda: state.load_route_end_search_result(0),
+            )
             route_end_note.object = (
                 f"Using **{state.route_end_name}** as the route end. The forecast cube was refreshed for the current route corridor automatically."
             )
             _notify("success", f"Resolved {state.route_end_name} and refreshed the route corridor forecast.")
         except Exception as exc:  # noqa: BLE001
             route_end_select_guard["active"] = False
-            route_end_note.object = f"**End search error**\n\n{exc}"
-            state.status_message = f"Route end search failed: {exc}"
-            _notify("error", str(exc))
+            route_end_note.object = (
+                f"**End search paused**\n\n{exc}\n\nAtmosLens kept the current loaded forecast cube and left the active route unchanged."
+            )
+            state.status_message = f"Route end search paused: {exc}"
+            _notify("warning", str(exc))
 
     def _search_route_end_enter(event):
         if event.new <= event.old:
@@ -593,16 +677,21 @@ def build_sidebar(state: AtmosLensState):
         if route_end_select_guard["active"] or event.new is None:
             return
         try:
-            state.apply_route_end_search_result(int(event.new))
-            _notify("info", "Refreshing the route corridor forecast...")
-            state.refresh_dataset()
+            _run_with_busy(
+                state,
+                "Applying the selected route destination...",
+                lambda: state.load_route_end_search_result(int(event.new)),
+            )
             route_end_note.object = (
                 f"Using **{state.route_end_name}** as the route end. The forecast cube was refreshed for the current route corridor automatically."
             )
+            _notify("success", f"Loaded a route corridor forecast for {state.route_name}.")
         except Exception as exc:  # noqa: BLE001
-            route_end_note.object = f"**End selection error**\n\n{exc}"
-            state.status_message = f"Route end selection failed: {exc}"
-            _notify("error", str(exc))
+            route_end_note.object = (
+                f"**End selection paused**\n\n{exc}\n\nAtmosLens kept the current loaded forecast cube and left the active route unchanged."
+            )
+            state.status_message = f"Route end selection paused: {exc}"
+            _notify("warning", str(exc))
 
     route_end_button.on_click(_search_route_end)
     route_end_search.param.watch(_search_route_end_enter, "enter_pressed")
@@ -616,8 +705,16 @@ def build_sidebar(state: AtmosLensState):
 
     def _refresh_route(_):
         try:
+            if not state.route_commute_ready():
+                message = (
+                    f"The current route spans about {state.route_distance_km():.0f} km, which is too large for the commute advisor. "
+                    "Pick a closer destination before loading a corridor forecast."
+                )
+                state.status_message = message
+                _notify("warning", message)
+                return
             _notify("info", "Fetching a corridor forecast for the current route geometry...")
-            state.refresh_dataset()
+            _run_with_busy(state, "Refreshing the forecast cube for the active commute corridor...", state.refresh_dataset)
             _notify("success", f"Loaded a route corridor forecast for {state.route_name}.")
         except Exception as exc:  # noqa: BLE001
             state.status_message = f"Route corridor refresh failed: {exc}"
@@ -778,6 +875,8 @@ def build_app(state: AtmosLensState | None = None):
         state.param.advisor_mode,
         state.param.horizon_hours,
         state.param.dataset_revision,
+        state.param.busy,
+        state.param.busy_message,
     )
     snapshots = pn.bind(
         lambda *_: render_snapshot_cards(state),
@@ -794,6 +893,8 @@ def build_app(state: AtmosLensState | None = None):
         state.param.pollutant,
         state.param.map_hour_index,
         state.param.dataset_revision,
+        state.param.busy,
+        state.param.busy_message,
     )
     map_panel = pn.bind(
         lambda *_: render_map_panel(state),
@@ -808,6 +909,8 @@ def build_app(state: AtmosLensState | None = None):
         state.param.pollutant,
         state.param.map_hour_index,
         state.param.dataset_revision,
+        state.param.busy,
+        state.param.busy_message,
     )
     timeline_panel = pn.bind(
         lambda *_: render_timeline_panel(state),
@@ -820,6 +923,8 @@ def build_app(state: AtmosLensState | None = None):
         state.param.advisor_mode,
         state.param.horizon_hours,
         state.param.dataset_revision,
+        state.param.busy,
+        state.param.busy_message,
     )
     commute_panel = pn.bind(
         lambda *_: render_commute_panel(state),
@@ -833,6 +938,8 @@ def build_app(state: AtmosLensState | None = None):
         state.param.pollutant,
         state.param.horizon_hours,
         state.param.dataset_revision,
+        state.param.busy,
+        state.param.busy_message,
     )
     matrix_panel = pn.bind(
         lambda *_: render_matrix_panel(state),
@@ -843,6 +950,8 @@ def build_app(state: AtmosLensState | None = None):
         state.param.advisor_mode,
         state.param.horizon_hours,
         state.param.dataset_revision,
+        state.param.busy,
+        state.param.busy_message,
     )
     bridge_panel = pn.bind(
         lambda *_: render_bridge_panel(state),
@@ -860,6 +969,8 @@ def build_app(state: AtmosLensState | None = None):
         state.param.advisor_mode,
         state.param.horizon_hours,
         state.param.dataset_revision,
+        state.param.busy,
+        state.param.busy_message,
     )
 
     intro = pn.pane.Markdown(

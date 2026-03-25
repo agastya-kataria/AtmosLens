@@ -15,7 +15,6 @@ import hvplot.pandas  # noqa: F401
 import hvplot.xarray  # noqa: F401
 import numpy as np
 import pandas as pd
-from holoviews.operation.datashader import quadmesh_rasterize
 
 from atmoslens.models import AnalysisResult, LocationDefinition, RouteDefinition
 from atmoslens.profiles import adjusted_thresholds, pollutant_meta
@@ -26,10 +25,10 @@ hv.extension("bokeh")
 
 def pollutant_cmap(pollutant: str):
     return {
-        "pm2_5": cc.fire,
-        "nitrogen_dioxide": cc.kbc,
-        "ozone": cc.bgy,
-        "european_aqi": cc.rainbow4,
+        "pm2_5": ["#15803d", "#65a30d", "#facc15", "#f97316", "#dc2626", "#7f1d1d"],
+        "nitrogen_dioxide": ["#166534", "#4d7c0f", "#fde047", "#fb923c", "#dc2626", "#7f1d1d"],
+        "ozone": ["#166534", "#65a30d", "#facc15", "#fb923c", "#ef4444", "#7f1d1d"],
+        "european_aqi": ["#15803d", "#84cc16", "#facc15", "#fb923c", "#dc2626", "#7f1d1d"],
     }[pollutant]
 
 
@@ -55,19 +54,30 @@ def build_pollution_map(
 ):
     meta = pollutant_meta(pollutant)
     clim = _color_limits(frame)
-    quadmesh = gv.QuadMesh(frame, crs=ccrs.PlateCarree())
-    raster = quadmesh_rasterize(quadmesh, aggregator="mean", dynamic=False).opts(
+    mesh = gv.QuadMesh(
+        (
+            np.asarray(frame["lon"].values, dtype=float),
+            np.asarray(frame["lat"].values, dtype=float),
+            np.asarray(frame.values, dtype=float),
+        ),
+        kdims=["Longitude", "Latitude"],
+        vdims=[meta["label"]],
+        crs=ccrs.PlateCarree(),
+    ).opts(
         width=860,
         height=520,
-        alpha=0.9,
+        alpha=0.62,
         cmap=pollutant_cmap(pollutant),
         clim=clim,
         colorbar=True,
         title=f"{meta['label']} map for {timestamp:%a %d %b %H:%M}",
         clabel=f"{meta['label']} ({meta['unit']})",
+        line_alpha=0,
+        infer_projection=True,
+        projection=ccrs.GOOGLE_MERCATOR,
         tools=["hover"],
     )
-    tiles = gv.tile_sources.CartoLight.opts(alpha=0.62)
+    tiles = gv.tile_sources.CartoLight.opts(alpha=0.82)
 
     active_location = pd.DataFrame(
         [{"name": location.name, "lat": location.lat, "lon": location.lon, "kind": "Decision point"}]
@@ -92,37 +102,45 @@ def build_pollution_map(
         marker="diamond",
     )
 
-    overlays = tiles * raster * point_glow * points
+    overlays = tiles * mesh * point_glow * points
     if route is not None:
-        route_points = pd.DataFrame(
-            [
-                {"name": route.start_label or "Start", "lat": route.points[0][0], "lon": route.points[0][1], "kind": "Route start"},
-                {"name": route.end_label or "End", "lat": route.points[-1][0], "lon": route.points[-1][1], "kind": "Route end"},
-            ]
-        )
-        route_markers = gv.Points(
-            route_points,
+        start_marker = gv.Points(
+            pd.DataFrame(
+                [{"name": route.start_label or "Start", "lat": route.points[0][0], "lon": route.points[0][1], "kind": "Route start"}]
+            ),
             kdims=["lon", "lat"],
             vdims=["name", "kind"],
             crs=ccrs.PlateCarree(),
-        ).opts(
-            size=12,
-            line_color="#0f172a",
-            fill_color="#f8fafc",
-            line_width=2,
-            tools=["hover"],
-        )
+        ).opts(size=12, line_color="#0f172a", fill_color="#2563eb", line_width=2, tools=["hover"])
+        end_marker = gv.Points(
+            pd.DataFrame(
+                [{"name": route.end_label or "End", "lat": route.points[-1][0], "lon": route.points[-1][1], "kind": "Route end"}]
+            ),
+            kdims=["lon", "lat"],
+            vdims=["name", "kind"],
+            crs=ccrs.PlateCarree(),
+        ).opts(size=12, line_color="#0f172a", fill_color="#f97316", line_width=2, tools=["hover"])
         route_glow = gv.Path(
             [[(lon, lat) for lat, lon in route.points]],
             crs=ccrs.PlateCarree(),
-        ).opts(color="#f59e0b", line_width=10, alpha=0.14)
+        ).opts(color="#f59e0b", line_width=10, alpha=0.16)
         route_path = gv.Path(
             [[(lon, lat) for lat, lon in route.points]],
             crs=ccrs.PlateCarree(),
-        ).opts(color="#0f172a", line_width=4, alpha=0.82)
-        overlays = overlays * route_glow * route_path * route_markers
+        ).opts(color="#0f172a", line_width=4, alpha=0.7)
+        route_core = gv.Path(
+            [[(lon, lat) for lat, lon in route.points]],
+            crs=ccrs.PlateCarree(),
+        ).opts(color="#f8fafc", line_width=2, alpha=0.95, line_dash="dashed")
+        overlays = overlays * route_glow * route_path * route_core * start_marker * end_marker
 
-    return overlays.opts(toolbar="right", active_tools=["wheel_zoom"], show_legend=False)
+    return overlays.opts(
+        toolbar="right",
+        active_tools=["wheel_zoom"],
+        show_legend=False,
+        infer_projection=True,
+        projection=ccrs.GOOGLE_MERCATOR,
+    )
 
 
 def build_timeline_plot(

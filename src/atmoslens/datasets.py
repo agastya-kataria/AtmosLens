@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import time
 from dataclasses import dataclass, replace
@@ -19,6 +20,7 @@ from atmoslens.models import LocationDefinition, RouteDefinition
 
 OPEN_METEO_AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
+NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
 SUPPORTED_POLLUTANTS = ("pm2_5", "nitrogen_dioxide", "ozone", "european_aqi")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATA_PATH = REPO_ROOT / "data" / "sample_forecast.nc"
@@ -395,6 +397,7 @@ def fetch_open_meteo_grid(
         attrs={
             "title": "AtmosLens air-quality forecast",
             "source": "Open-Meteo Air Quality API",
+            "forecast_mode": "live_grid",
             "domain": config.domains,
             "region_name": config.name,
             "timezone": config.timezone,
@@ -416,6 +419,209 @@ def fetch_open_meteo_grid(
         target.parent.mkdir(parents=True, exist_ok=True)
         ds.to_netcdf(target)
     return ds
+
+
+def fetch_open_meteo_point(
+    *,
+    lat: float,
+    lon: float,
+    forecast_hours: int = 48,
+    timezone: str = "auto",
+    domains: str = "auto",
+    pollutants: Iterable[str] = SUPPORTED_POLLUTANTS,
+    timeout: int = 90,
+) -> xr.Dataset:
+    pollutant_list = [pollutant for pollutant in pollutants if pollutant in SUPPORTED_POLLUTANTS]
+    if not pollutant_list:
+        raise ValueError("At least one supported pollutant must be requested.")
+
+    query = urlencode(
+        {
+            "latitude": f"{lat:.4f}",
+            "longitude": f"{lon:.4f}",
+            "hourly": ",".join(pollutant_list),
+            "forecast_hours": forecast_hours,
+            "timezone": timezone,
+            "domains": domains,
+        }
+    )
+    payload = _fetch_json(f"{OPEN_METEO_AIR_QUALITY_URL}?{query}", timeout=timeout)
+    if not isinstance(payload, dict) or "hourly" not in payload:
+        raise ValueError("The upstream point forecast response was incomplete.")
+
+    hourly = payload["hourly"]
+    times = pd.to_datetime(hourly["time"])
+    hourly_units = payload.get("hourly_units", {})
+    data_vars: dict[str, tuple[tuple[str, ...], np.ndarray, dict[str, str]]] = {}
+    for pollutant in pollutant_list:
+        values = hourly.get(pollutant)
+        if values is None:
+            raise ValueError(f"Open-Meteo response missing hourly field for '{pollutant}'.")
+        data_vars[pollutant] = (
+            ("time",),
+            np.asarray([np.nan if value is None else float(value) for value in values], dtype=float),
+            {"units": hourly_units.get(pollutant, "")},
+        )
+
+    return xr.Dataset(
+        data_vars=data_vars,
+        coords={"time": times},
+        attrs={
+            "title": "AtmosLens air-quality point forecast",
+            "source": "Open-Meteo Air Quality API",
+            "forecast_mode": "live_point",
+            "timezone": timezone,
+            "domains": domains,
+            "center_lat": f"{lat:.4f}",
+            "center_lon": f"{lon:.4f}",
+        },
+    )
+
+
+def expand_point_forecast_to_grid(
+    point_ds: xr.Dataset,
+    config: RegionConfig,
+    *,
+    output_path: str | Path | None = None,
+) -> xr.Dataset:
+    latitudes, longitudes, _ = build_grid(config)
+    lat_pattern = np.linspace(-1.0, 1.0, len(latitudes), dtype=float)[None, :, None]
+    lon_pattern = np.linspace(-1.0, 1.0, len(longitudes), dtype=float)[None, None, :]
+    spatial_pattern = 0.5 * lat_pattern - 0.35 * lon_pattern + 0.18 * np.cos(np.pi * lat_pattern * lon_pattern)
+
+    data_vars: dict[str, tuple[tuple[str, ...], np.ndarray, dict[str, str]]] = {}
+    for pollutant in available_pollutants(point_ds):
+        series = np.asarray(point_ds[pollutant].values, dtype=float)
+        spread = max(float(np.nanstd(series)) * 0.45, float(np.nanmean(series)) * 0.05, 0.8)
+        cube = np.clip(series[:, None, None] + spatial_pattern * spread, a_min=0.0, a_max=None)
+        data_vars[pollutant] = (
+            ("time", "lat", "lon"),
+            cube,
+            {"units": str(point_ds[pollutant].attrs.get("units", ""))},
+        )
+
+    ds = xr.Dataset(
+        data_vars=data_vars,
+        coords={"time": pd.to_datetime(point_ds.time.values), "lat": latitudes, "lon": longitudes},
+        attrs={
+            "title": "AtmosLens approximate local fallback forecast",
+            "source": "Open-Meteo point forecast expanded to a local grid",
+            "forecast_mode": "point_fallback",
+            "domain": config.domains,
+            "region_name": config.name,
+            "timezone": config.timezone,
+            "forecast_hours": str(config.forecast_hours),
+            "bbox": json.dumps(
+                {
+                    "lat_min": config.lat_min,
+                    "lat_max": config.lat_max,
+                    "lon_min": config.lon_min,
+                    "lon_max": config.lon_max,
+                }
+            ),
+        },
+    )
+    ds = validate_dataset(ds)
+    if output_path:
+        target = _dataset_path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        ds.to_netcdf(target)
+    return ds
+
+
+def build_template_fallback_grid(
+    config: RegionConfig,
+    *,
+    output_path: str | Path | None = None,
+) -> xr.Dataset:
+    template = validate_dataset(xr.load_dataset(DEFAULT_DATA_PATH))
+    latitudes, longitudes, _ = build_grid(config)
+    lat_pattern = np.linspace(-1.0, 1.0, len(latitudes), dtype=float)[None, :, None]
+    lon_pattern = np.linspace(-1.0, 1.0, len(longitudes), dtype=float)[None, None, :]
+    radial_pattern = np.sqrt(lat_pattern**2 + lon_pattern**2)
+
+    data_vars: dict[str, tuple[tuple[str, ...], np.ndarray, dict[str, str]]] = {}
+    for pollutant in available_pollutants(template):
+        source = np.asarray(template[pollutant].values, dtype=float)
+        base = source.mean(axis=(1, 2), keepdims=True)
+        spread = max(float(np.nanstd(base[:, 0, 0])) * 0.55, float(np.nanmean(base[:, 0, 0])) * 0.06, 1.0)
+        cube = np.clip(base + (0.55 * lat_pattern - 0.3 * lon_pattern + 0.12 * radial_pattern) * spread, a_min=0.0, a_max=None)
+        data_vars[pollutant] = (
+            ("time", "lat", "lon"),
+            cube,
+            {"units": str(template[pollutant].attrs.get("units", ""))},
+        )
+
+    ds = xr.Dataset(
+        data_vars=data_vars,
+        coords={"time": pd.to_datetime(template.time.values), "lat": latitudes, "lon": longitudes},
+        attrs={
+            "title": "AtmosLens bundled fallback forecast",
+            "source": "Bundled AtmosLens fallback cube",
+            "forecast_mode": "template_fallback",
+            "domain": config.domains,
+            "region_name": config.name,
+            "timezone": config.timezone,
+            "forecast_hours": str(config.forecast_hours),
+            "bbox": json.dumps(
+                {
+                    "lat_min": config.lat_min,
+                    "lat_max": config.lat_max,
+                    "lon_min": config.lon_min,
+                    "lon_max": config.lon_max,
+                }
+            ),
+        },
+    )
+    ds = validate_dataset(ds)
+    if output_path:
+        target = _dataset_path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        ds.to_netcdf(target)
+    return ds
+
+
+def fetch_resilient_forecast(
+    config: RegionConfig = DEFAULT_REGION,
+    *,
+    output_path: str | Path | None = None,
+    pollutants: Iterable[str] = SUPPORTED_POLLUTANTS,
+    timeout: int = 90,
+) -> tuple[xr.Dataset, str]:
+    try:
+        ds = fetch_open_meteo_grid(config=config, output_path=output_path, pollutants=pollutants, timeout=timeout)
+        return ds, (
+            f"Loaded live forecast cube for {config.name} centred on "
+            f"{config.lat_min + (config.lat_max - config.lat_min) / 2:.2f}, "
+            f"{config.lon_min + (config.lon_max - config.lon_min) / 2:.2f}."
+        )
+    except ValueError as exc:
+        primary_error = str(exc)
+        retryable = "rate-limiting" in primary_error or "Could not reach" in primary_error
+        if not retryable:
+            raise
+
+    try:
+        point_ds = fetch_open_meteo_point(
+            lat=(config.lat_min + config.lat_max) / 2.0,
+            lon=(config.lon_min + config.lon_max) / 2.0,
+            forecast_hours=config.forecast_hours,
+            timezone=config.timezone,
+            domains=config.domains,
+            pollutants=pollutants,
+            timeout=timeout,
+        )
+        ds = expand_point_forecast_to_grid(point_ds, config, output_path=output_path)
+        return ds, (
+            f"The upstream gridded forecast service was temporarily busy, so AtmosLens loaded an approximate local fallback cube for "
+            f"{config.name}. Retry `Refresh Forecast Cube` later for a full-resolution live map."
+        )
+    except Exception:
+        ds = build_template_fallback_grid(config, output_path=output_path)
+        return ds, (
+            f"The upstream forecast service was unavailable, so AtmosLens loaded a bundled fallback cube centred on {config.name}. "
+            f"Retry `Refresh Forecast Cube` later for live data."
+        )
 
 
 def load_dataset(
@@ -526,10 +732,17 @@ def _search_description(result: dict[str, object]) -> str:
     return " | ".join(parts)
 
 
-def _query_variants(query: str) -> list[str]:
+def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    lat_scale = 111.0
+    lon_scale = 111.0 * math.cos(math.radians((lat1 + lat2) / 2.0))
+    return math.hypot((lat2 - lat1) * lat_scale, (lon2 - lon1) * lon_scale)
+
+
+def _query_variants(query: str, *, context: str | None = None) -> list[str]:
     clean_query = " ".join(query.split())
     tokens = [token for token in re.split(r"[\s,]+", clean_query) if token]
     variants = [clean_query]
+    clean_context = " ".join((context or "").split())
     if len(tokens) >= 2:
         variants.extend(
             [
@@ -544,6 +757,14 @@ def _query_variants(query: str) -> list[str]:
         )
     elif tokens:
         variants.append(tokens[0])
+
+    if clean_context:
+        variants.extend(
+            [
+                f"{clean_query} {clean_context}",
+                f"{clean_query}, {clean_context}",
+            ]
+        )
 
     deduped: list[str] = []
     seen: set[str] = set()
@@ -564,7 +785,80 @@ def _result_search_text(result: dict[str, object]) -> str:
     ).casefold()
 
 
-def _search_score(result: dict[str, object], query_tokens: list[str], variant_index: int) -> tuple[float, int, int, int]:
+def _nominatim_result_to_search_result(result: dict[str, object]) -> dict[str, object]:
+    address = result.get("address", {}) if isinstance(result.get("address", {}), dict) else {}
+    display_name = str(result.get("display_name", "")).strip()
+    parts = [part.strip() for part in display_name.split(",") if part.strip()]
+    name = parts[0] if parts else str(result.get("name", "")).strip() or display_name
+    admin1 = (
+        str(address.get("state") or address.get("province") or address.get("county") or "").strip()
+        or (parts[1] if len(parts) > 2 else "")
+    )
+    admin2 = str(address.get("city") or address.get("town") or address.get("municipality") or "").strip()
+    country = str(address.get("country") or (parts[-1] if parts else "")).strip()
+    return {
+        "name": name,
+        "admin1": admin1,
+        "admin2": admin2,
+        "country": country,
+        "country_code": str(address.get("country_code") or "").upper(),
+        "feature_code": str(result.get("type") or "").upper(),
+        "latitude": float(result["lat"]),
+        "longitude": float(result["lon"]),
+        "timezone": "auto",
+        "population": 0,
+    }
+
+
+def _search_places_nominatim(query: str, *, count: int, language: str, timeout: int) -> list[dict[str, object]]:
+    params = urlencode(
+        {
+            "q": query,
+            "format": "jsonv2",
+            "limit": count,
+            "addressdetails": 1,
+            "accept-language": language,
+        }
+    )
+    payload = _fetch_json(f"{NOMINATIM_SEARCH_URL}?{params}", timeout=timeout)
+    if not isinstance(payload, list):
+        return []
+    allowed_address_types = {
+        "administrative",
+        "borough",
+        "city",
+        "country",
+        "county",
+        "district",
+        "hamlet",
+        "island",
+        "municipality",
+        "neighbourhood",
+        "postcode",
+        "province",
+        "quarter",
+        "state",
+        "suburb",
+        "town",
+        "village",
+    }
+    return [
+        _nominatim_result_to_search_result(result)
+        for result in payload
+        if "lat" in result
+        and "lon" in result
+        and str(result.get("addresstype") or "").strip().casefold() in allowed_address_types
+    ]
+
+
+def _search_score(
+    result: dict[str, object],
+    query_tokens: list[str],
+    variant_index: int,
+    *,
+    reference: tuple[float, float] | None = None,
+    country_bias: str | None = None,
+) -> tuple[float, int, int, int, int]:
     search_text = _result_search_text(result)
     overlap = sum(token in search_text for token in query_tokens)
     exact_name = int(str(result.get("name", "")).strip().casefold() == " ".join(query_tokens))
@@ -582,10 +876,31 @@ def _search_score(result: dict[str, object], query_tokens: list[str], variant_in
         "ADM3": 1,
         "ADM4": 1,
     }.get(feature, 0)
-    return (overlap + exact_name + feature_bonus / 10.0, -variant_index, population, exact_name)
+    country_text = " ".join(
+        str(result.get(field, "")).strip().casefold()
+        for field in ("country", "country_code", "admin1", "admin2")
+    )
+    country_match = int(bool(country_bias) and country_bias.casefold() in country_text)
+    distance_bucket = 0
+    proximity_bonus = 0.0
+    if reference is not None:
+        distance_km = _distance_km(reference[0], reference[1], float(result["latitude"]), float(result["longitude"]))
+        distance_bucket = -int(distance_km // 25.0)
+        proximity_bonus = max(0.0, 2.5 - min(distance_km, 2000.0) / 800.0)
+    text_score = overlap * 2.5 + exact_name * 3.0 + feature_bonus / 5.0 + country_match * 1.4 + proximity_bonus
+    return (text_score, country_match, overlap, -variant_index, max(population, exact_name * 10_000_000) + distance_bucket)
 
 
-def search_places(query: str, *, count: int = 6, language: str = "en", timeout: int = 30) -> list[LocationDefinition]:
+def search_places(
+    query: str,
+    *,
+    count: int = 6,
+    language: str = "en",
+    timeout: int = 30,
+    reference: tuple[float, float] | None = None,
+    country_bias: str | None = None,
+    context: str | None = None,
+) -> list[LocationDefinition]:
     clean_query = " ".join(query.split())
     if len(clean_query) < 2:
         raise ValueError("Type at least two characters before searching for a place.")
@@ -594,7 +909,7 @@ def search_places(query: str, *, count: int = 6, language: str = "en", timeout: 
     aggregated: list[tuple[tuple[float, int, int, int], dict[str, object]]] = []
     seen_results: set[tuple[str, float, float]] = set()
 
-    for variant_index, variant in enumerate(_query_variants(clean_query)):
+    for variant_index, variant in enumerate(_query_variants(clean_query, context=context)):
         params = urlencode({"name": variant, "count": max(count, 8), "language": language, "format": "json"})
         payload = _fetch_json(f"{OPEN_METEO_GEOCODING_URL}?{params}", timeout=timeout)
         results = payload.get("results", []) if isinstance(payload, dict) else []
@@ -605,9 +920,49 @@ def search_places(query: str, *, count: int = 6, language: str = "en", timeout: 
             if key in seen_results:
                 continue
             seen_results.add(key)
-            aggregated.append((_search_score(result, query_tokens, variant_index), result))
+            aggregated.append(
+                (
+                    _search_score(
+                        result,
+                        query_tokens,
+                        variant_index,
+                        reference=reference,
+                        country_bias=country_bias,
+                    ),
+                    result,
+                )
+            )
         if len(aggregated) >= count * 3:
             break
+
+    fallback_variants = [clean_query]
+    if context:
+        fallback_variants.append(f"{clean_query} {context}")
+    if country_bias:
+        fallback_variants.append(f"{clean_query} {country_bias}")
+    fallback_variants = list(dict.fromkeys(fallback_variants))
+    if len(aggregated) < count * 2 or context:
+        base_variant_count = len(_query_variants(clean_query, context=context))
+        for extra_index, variant in enumerate(fallback_variants):
+            for result in _search_places_nominatim(variant, count=max(4, count), language=language, timeout=timeout):
+                lat = round(float(result["latitude"]), 5)
+                lon = round(float(result["longitude"]), 5)
+                key = (str(result.get("name", "")).strip().casefold(), lat, lon)
+                if key in seen_results:
+                    continue
+                seen_results.add(key)
+                aggregated.append(
+                    (
+                        _search_score(
+                            result,
+                            query_tokens,
+                            base_variant_count + extra_index,
+                            reference=reference,
+                            country_bias=country_bias,
+                        ),
+                        result,
+                    )
+                )
 
     if not aggregated:
         raise ValueError(f"No places matched '{clean_query}'. Try a city, district, or postcode.")

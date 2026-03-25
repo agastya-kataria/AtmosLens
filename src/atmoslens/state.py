@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import math
 from pathlib import Path
 
 import pandas as pd
@@ -18,6 +19,7 @@ from atmoslens.config import (
     DEFAULT_REGION_PRESET,
     DEFAULT_ROUTE_PRESET,
     HORIZON_OPTIONS,
+    MAX_COMMUTE_DISTANCE_KM,
     PROFILE_OPTIONS,
 )
 from atmoslens.datasets import (
@@ -96,6 +98,8 @@ class AtmosLensState(param.Parameterized):
 
     dataset_revision = param.Integer(default=0)
     status_message = param.String(default="Loaded bundled Dublin sample forecast.")
+    busy = param.Boolean(default=False)
+    busy_message = param.String(default="")
 
     def __init__(self, dataset=None, dataset_path: str | Path | None = None, **params):
         super().__init__(**params)
@@ -268,6 +272,51 @@ class AtmosLensState(param.Parameterized):
     def _route_is_seeded(self) -> bool:
         return self.route_start_name == "Approach"
 
+    def _distance_km(self, start_lat: float, start_lon: float, end_lat: float, end_lon: float) -> float:
+        lat_scale = 111.0
+        lon_scale = 111.0 * math.cos(math.radians((start_lat + end_lat) / 2.0))
+        return math.hypot(
+            (end_lat - start_lat) * lat_scale,
+            (end_lon - start_lon) * lon_scale,
+        )
+
+    def _current_route_distance_km(self) -> float:
+        return self._distance_km(
+            self.route_start_lat,
+            self.route_start_lon,
+            self.route_end_lat,
+            self.route_end_lon,
+        )
+
+    def _country_hint(self, label: str) -> str | None:
+        parts = [part.strip() for part in label.split(",") if part.strip()]
+        if len(parts) >= 2:
+            return parts[-1]
+        return None
+
+    def set_busy(self, message: str) -> None:
+        self.busy_message = message
+        self.busy = True
+
+    def clear_busy(self) -> None:
+        self.busy = False
+        self.busy_message = ""
+
+    def route_distance_km(self) -> float:
+        return self._current_route_distance_km()
+
+    def route_commute_ready(self) -> bool:
+        return self.route_distance_km() <= MAX_COMMUTE_DISTANCE_KM
+
+    def ensure_route_commute_ready(self) -> None:
+        distance_km = self.route_distance_km()
+        if distance_km <= MAX_COMMUTE_DISTANCE_KM:
+            return
+        raise ValueError(
+            f"The current route spans about {distance_km:.0f} km, which is too large for the commute advisor. "
+            f"Choose a destination within roughly {MAX_COMMUTE_DISTANCE_KM:.0f} km or analyze the endpoint as a place instead."
+        )
+
     def _location_is_linked_to_route_end(self) -> bool:
         return (
             abs(self.location_lat - self.route_end_lat) <= 0.02
@@ -364,6 +413,86 @@ class AtmosLensState(param.Parameterized):
             region_name=self.region_name,
         )
 
+    def _region_settings_for_points(
+        self,
+        points: list[tuple[float, float]],
+        *,
+        label: str,
+        min_lat_span: float = 0.35,
+        min_lon_span: float = 0.5,
+    ) -> dict[str, float | str]:
+        latitudes = [lat for lat, _ in points]
+        longitudes = [lon for _, lon in points]
+        lat_min, lat_max = min(latitudes), max(latitudes)
+        lon_min, lon_max = min(longitudes), max(longitudes)
+        lat_span = max(min_lat_span, (lat_max - lat_min) * 1.8 or min_lat_span)
+        lon_span = max(min_lon_span, (lon_max - lon_min) * 1.8 or min_lon_span)
+        return {
+            "label": label,
+            "center_lat": round((lat_min + lat_max) / 2.0, 4),
+            "center_lon": round((lon_min + lon_max) / 2.0, 4),
+            "lat_span": round(lat_span, 4),
+            "lon_span": round(lon_span, 4),
+        }
+
+    def _message_for_config(self, config) -> str:
+        return (
+            f"Loaded live forecast cube for {config.name} centred on "
+            f"{config.lat_min + (config.lat_max - config.lat_min) / 2:.2f}, "
+            f"{config.lon_min + (config.lon_max - config.lon_min) / 2:.2f}."
+        )
+
+    def _fetch_dataset_for_config(self, config):
+        ds = fetch_open_meteo_grid(config=config, output_path=self.live_dataset_path)
+        return ds, self._message_for_config(config)
+
+    def _location_result_config(self, location: LocationDefinition):
+        region = self._region_settings_for_points([(location.lat, location.lon)], label=f"{location.name} search region")
+        timezone = location.timezone if location.timezone and location.timezone != "auto" else (self.forecast_timezone or "auto")
+        return region_from_center(
+            str(region["label"]),
+            float(region["center_lat"]),
+            float(region["center_lon"]),
+            lat_span=float(region["lat_span"]),
+            lon_span=float(region["lon_span"]),
+            n_lat=self.forecast_grid_lat,
+            n_lon=self.forecast_grid_lon,
+            forecast_hours=max(self.horizon_hours, 48),
+            timezone=timezone,
+            domains="auto",
+        )
+
+    def _route_end_result_config(self, location: LocationDefinition):
+        distance_km = self._distance_km(
+            self.route_start_lat,
+            self.route_start_lon,
+            location.lat,
+            location.lon,
+        )
+        if distance_km > MAX_COMMUTE_DISTANCE_KM:
+            raise ValueError(
+                f"The selected destination would create a route of about {distance_km:.0f} km, which is too large for the commute advisor. "
+                f"Choose a destination within roughly {MAX_COMMUTE_DISTANCE_KM:.0f} km."
+            )
+        route_name = f"{self.route_start_name} to {location.name}"
+        region = self._region_settings_for_points(
+            [(self.route_start_lat, self.route_start_lon), (location.lat, location.lon)],
+            label=f"{route_name} corridor",
+        )
+        timezone = location.timezone if location.timezone and location.timezone != "auto" else (self.forecast_timezone or "auto")
+        return region_from_center(
+            str(region["label"]),
+            float(region["center_lat"]),
+            float(region["center_lon"]),
+            lat_span=float(region["lat_span"]),
+            lon_span=float(region["lon_span"]),
+            n_lat=self.forecast_grid_lat,
+            n_lon=self.forecast_grid_lon,
+            forecast_hours=max(self.horizon_hours, 48),
+            timezone=timezone,
+            domains="auto",
+        )
+
     def region_config(self):
         return region_from_center(
             self.region_name or self.region_preset,
@@ -380,12 +509,9 @@ class AtmosLensState(param.Parameterized):
 
     def refresh_dataset(self) -> None:
         config = self.region_config()
-        ds = fetch_open_meteo_grid(config=config, output_path=self.live_dataset_path)
+        ds, message = self._fetch_dataset_for_config(config)
         self.dataset = ds
-        self._after_dataset_update(
-            f"Loaded live forecast cube for {config.name} centred on {config.lat_min + (config.lat_max - config.lat_min) / 2:.2f}, "
-            f"{config.lon_min + (config.lon_max - config.lon_min) / 2:.2f}."
-        )
+        self._after_dataset_update(message)
 
     def fit_region_to_points(
         self,
@@ -418,20 +544,39 @@ class AtmosLensState(param.Parameterized):
     def route_end_search_labels(self) -> list[str]:
         return [location_label(location) for location in self._route_end_search_results]
 
-    def search_location(self, query: str) -> list[str]:
+    def search_location_matches(self, query: str) -> list[str]:
         self._location_search_results = search_places(query)
-        self.apply_location_search_result(0)
         return self.location_search_labels()
 
+    def search_location(self, query: str) -> list[str]:
+        labels = self.search_location_matches(query)
+        self.load_location_search_result(0)
+        return labels
+
     def search_route_start(self, query: str) -> list[str]:
-        self._route_start_search_results = search_places(query)
+        self._route_start_search_results = search_places(
+            query,
+            reference=(self.location_lat, self.location_lon),
+            country_bias=self._country_hint(self.location_name),
+            context=self.location_name,
+        )
         self.apply_route_start_search_result(0)
         return self.route_start_search_labels()
 
-    def search_route_end(self, query: str) -> list[str]:
-        self._route_end_search_results = search_places(query)
-        self.apply_route_end_search_result(0)
+    def search_route_end_matches(self, query: str) -> list[str]:
+        context_label = self.location_name if self._route_is_seeded() else self.route_start_name or self.location_name
+        self._route_end_search_results = search_places(
+            query,
+            reference=(self.route_start_lat, self.route_start_lon),
+            country_bias=self._country_hint(self.route_start_name) or self._country_hint(self.location_name),
+            context=context_label,
+        )
         return self.route_end_search_labels()
+
+    def search_route_end(self, query: str) -> list[str]:
+        labels = self.search_route_end_matches(query)
+        self.load_route_end_search_result(0)
+        return labels
 
     def apply_location_search_result(self, index: int) -> None:
         location = self._location_search_results[index]
@@ -455,6 +600,14 @@ class AtmosLensState(param.Parameterized):
         self.status_message = (
             f"Resolved {location.name}. Region recentered around the searched place and the commute route was reset to a local corridor."
         )
+
+    def load_location_search_result(self, index: int) -> None:
+        location = self._location_search_results[index]
+        config = self._location_result_config(location)
+        ds, message = self._fetch_dataset_for_config(config)
+        self.apply_location_search_result(index)
+        self.dataset = ds
+        self._after_dataset_update(message)
 
     def apply_route_start_search_result(self, index: int) -> None:
         location = self._route_start_search_results[index]
@@ -492,6 +645,14 @@ class AtmosLensState(param.Parameterized):
             f"Resolved route end as {location.name}. Region was auto-fit to the current route corridor.{location_suffix}"
         )
 
+    def load_route_end_search_result(self, index: int) -> None:
+        location = self._route_end_search_results[index]
+        config = self._route_end_result_config(location)
+        ds, message = self._fetch_dataset_for_config(config)
+        self.apply_route_end_search_result(index)
+        self.dataset = ds
+        self._after_dataset_update(message)
+
     def _refresh_route_name(self) -> None:
         self.route_name = f"{self.route_start_name} to {self.route_end_name}"
 
@@ -514,11 +675,8 @@ class AtmosLensState(param.Parameterized):
         finally:
             self._ignore_route_sync_watch = previous_route_flag
 
-    def _route_points_are_local(self, *, max_lat_gap: float = 8.0, max_lon_gap: float = 8.0) -> bool:
-        return (
-            abs(self.route_start_lat - self.route_end_lat) <= max_lat_gap
-            and abs(self.route_start_lon - self.route_end_lon) <= max_lon_gap
-        )
+    def _route_points_are_local(self, *, max_distance_km: float = MAX_COMMUTE_DISTANCE_KM) -> bool:
+        return self.route_distance_km() <= max_distance_km
 
     def _sync_location_to_route_end_if_remote(self) -> bool:
         if not self._route_points_are_local():
@@ -649,6 +807,7 @@ class AtmosLensState(param.Parameterized):
         )
 
     def route_result(self):
+        self.ensure_route_commute_ready()
         route = self.current_route()
         route_points = tuple((round(lat, 4), round(lon, 4)) for lat, lon in route.points)
         return self._route_result_cached(
@@ -713,10 +872,30 @@ class AtmosLensState(param.Parameterized):
         summary = self.summary()
         loaded_region = str(summary["region_name"])
         target_region = self.region_name
+        route_distance_km = self.route_distance_km()
+        route_commute_ready = route_distance_km <= MAX_COMMUTE_DISTANCE_KM
+        loaded_lat_span = float(summary["lat_max"] - summary["lat_min"])
+        loaded_lon_span = float(summary["lon_max"] - summary["lon_min"])
+        loaded_center_lat = float(summary["lat_min"] + loaded_lat_span / 2.0)
+        loaded_center_lon = float(summary["lon_min"] + loaded_lon_span / 2.0)
+        selection_shift_km = self._distance_km(
+            loaded_center_lat,
+            loaded_center_lon,
+            self.location_lat,
+            self.location_lon,
+        )
+        center_aligned = (
+            abs(loaded_center_lat - self.region_center_lat) <= max(0.18, self.region_lat_span * 0.45)
+            and abs(loaded_center_lon - self.region_center_lon) <= max(0.22, self.region_lon_span * 0.45)
+        )
+        lat_span_ratio = loaded_lat_span / max(self.region_lat_span, 1e-6)
+        lon_span_ratio = loaded_lon_span / max(self.region_lon_span, 1e-6)
+        span_compatible = 0.45 <= lat_span_ratio <= 2.5 and 0.35 <= lon_span_ratio <= 2.5
         cube_matches_target = (
             loaded_region == target_region
             or loaded_region in target_region
             or target_region in loaded_region
+            or (center_aligned and span_compatible)
         )
         location_ready = coordinates_in_bounds(self.dataset, self.location_lat, self.location_lon)
         route = self.current_route()
@@ -727,5 +906,11 @@ class AtmosLensState(param.Parameterized):
             "cube_matches_target": cube_matches_target,
             "location_ready": location_ready,
             "route_ready": route_ready,
-            "ready": cube_matches_target and location_ready and route_ready,
+            "route_distance_km": route_distance_km,
+            "route_commute_ready": route_commute_ready,
+            "loaded_center_lat": loaded_center_lat,
+            "loaded_center_lon": loaded_center_lon,
+            "selection_shift_km": selection_shift_km,
+            "busy": self.busy,
+            "ready": cube_matches_target and location_ready and route_ready and route_commute_ready,
         }

@@ -26,3 +26,5 @@ PROFILE_OPTIONS = ["General", "Sensitive", "Asthma", "Outdoor Worker"]
 ACTIVITY_OPTIONS = ["Run", "Walk", "Ventilate", "Cycle Commute"]
 ADVISOR_MODES = ["Any hour in horizon", "Morning", "Afternoon", "Evening", "Overnight"]
 HORIZON_OPTIONS = [12, 24, 36, 48]
+
+MAX_COMMUTE_DISTANCE_KM = 160.0

@@ -32,6 +32,44 @@ def test_search_score_prefers_results_matching_more_query_tokens():
     assert _search_score(district_result, query_tokens, 0) > _search_score(city_result, query_tokens, 0)
 
 
+def test_search_score_prefers_results_near_the_reference_location():
+    query_tokens = ["tao"]
+    nearby_result = {
+        "name": "Koh Tao",
+        "admin1": "Surat Thani",
+        "country": "Thailand",
+        "country_code": "TH",
+        "feature_code": "PPL",
+        "latitude": 10.0981,
+        "longitude": 99.8406,
+        "population": 1500,
+    }
+    distant_result = {
+        "name": "Tao",
+        "admin1": "New Caledonia",
+        "country": "New Caledonia",
+        "country_code": "NC",
+        "feature_code": "PPL",
+        "latitude": -20.55,
+        "longitude": 164.81,
+        "population": 1500,
+    }
+
+    assert _search_score(
+        nearby_result,
+        query_tokens,
+        0,
+        reference=(7.8804, 98.3923),
+        country_bias="Thailand",
+    ) > _search_score(
+        distant_result,
+        query_tokens,
+        0,
+        reference=(7.8804, 98.3923),
+        country_bias="Thailand",
+    )
+
+
 def test_applying_location_search_result_seeds_a_local_route(sample_dataset):
     state = AtmosLensState(dataset=sample_dataset)
     state._location_search_results = [
