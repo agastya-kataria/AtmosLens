@@ -35,7 +35,7 @@ class AtmosLensState(param.Parameterized):
     def __init__(self, dataset=None, dataset_path: str | Path | None = None, **params):
         super().__init__(**params)
         resolved_path = Path(dataset_path or DEFAULT_DATA_PATH)
-        self.dataset = dataset or load_dataset(
+        self.dataset = dataset if dataset is not None else load_dataset(
             resolved_path,
             allow_download=not resolved_path.exists(),
         )

@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
+MPL_CACHE = Path(__file__).resolve().parents[2] / ".mpl-cache"
+MPL_CACHE.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("MPLCONFIGDIR", str(MPL_CACHE))
+
 import cartopy.crs as ccrs
 import colorcet as cc
 import geoviews as gv
@@ -158,4 +165,3 @@ def build_route_plot(
     avoid_band = hv.HSpan(thresholds["caution"], upper).opts(fill_color="#f9c8c2", fill_alpha=0.25)
     best_window = hv.VSpan(best["departure"], best["arrival"]).opts(fill_color="#0f766e", fill_alpha=0.12)
     return (good_band * caution_band * avoid_band * best_window * line * points).opts(legend_position="top_left")
-

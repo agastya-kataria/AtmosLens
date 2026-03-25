@@ -1,0 +1,65 @@
+<svg width="1400" height="720" viewBox="0 0 1400 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1400" y2="720" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#FFF7ED"/>
+    </linearGradient>
+  </defs>
+  <rect width="1400" height="720" rx="30" fill="url(#bg2)"/>
+  <text x="66" y="88" fill="#0F172A" font-family="Avenir Next, Segoe UI, sans-serif" font-size="40" font-weight="700">AtmosLens bridge to a future Lumen XarraySource</text>
+  <text x="66" y="126" fill="#475569" font-family="Avenir Next, Segoe UI, sans-serif" font-size="22">The app already expresses its workflow as explicit xarray-aware transforms.</text>
+
+  <rect x="66" y="176" width="354" height="462" rx="24" fill="#FFFFFF" stroke="#CBD5E1"/>
+  <text x="92" y="226" fill="#0F172A" font-family="Avenir Next, Segoe UI, sans-serif" font-size="28" font-weight="700">xarray dataset schema</text>
+  <g font-family="Avenir Next, Segoe UI, sans-serif" font-size="20" fill="#334155">
+    <text x="92" y="278">dims</text>
+    <text x="132" y="312">time: 48</text>
+    <text x="132" y="342">lat: 9</text>
+    <text x="132" y="372">lon: 11</text>
+    <text x="92" y="430">variables</text>
+    <text x="132" y="464">pm2_5</text>
+    <text x="132" y="494">nitrogen_dioxide</text>
+    <text x="132" y="524">ozone</text>
+    <text x="132" y="554">european_aqi</text>
+    <text x="92" y="612">attrs</text>
+    <text x="132" y="646">source: Open-Meteo Air Quality API</text>
+  </g>
+
+  <path d="M454 410H614" stroke="#0F766E" stroke-width="10" stroke-linecap="round"/>
+  <path d="M592 384L636 410L592 436" stroke="#0F766E" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="646" y="176" width="334" height="462" rx="24" fill="#FFFFFF" stroke="#CBD5E1"/>
+  <text x="672" y="226" fill="#0F172A" font-family="Avenir Next, Segoe UI, sans-serif" font-size="28" font-weight="700">Transform steps</text>
+  <g font-family="Avenir Next, Segoe UI, sans-serif">
+    <rect x="672" y="264" width="282" height="54" rx="14" fill="#E0F2FE"/>
+    <text x="694" y="298" fill="#0F172A" font-size="20" font-weight="600">1. select_location</text>
+    <rect x="672" y="334" width="282" height="54" rx="14" fill="#DCFCE7"/>
+    <text x="694" y="368" fill="#0F172A" font-size="20" font-weight="600">2. select_time_range</text>
+    <rect x="672" y="404" width="282" height="54" rx="14" fill="#FEF3C7"/>
+    <text x="694" y="438" fill="#0F172A" font-size="20" font-weight="600">3. aggregate_hourly_windows</text>
+    <rect x="672" y="474" width="282" height="54" rx="14" fill="#FDE68A"/>
+    <text x="694" y="508" fill="#0F172A" font-size="20" font-weight="600">4. score_exposure</text>
+    <rect x="672" y="544" width="282" height="54" rx="14" fill="#FED7AA"/>
+    <text x="694" y="578" fill="#0F172A" font-size="20" font-weight="600">5. recommend_activity</text>
+  </g>
+
+  <path d="M1014 410H1174" stroke="#D97706" stroke-width="10" stroke-linecap="round"/>
+  <path d="M1152 384L1196 410L1152 436" stroke="#D97706" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="1206" y="176" width="128" height="462" rx="24" fill="#0F172A"/>
+  <text x="1230" y="226" fill="#F8FAFC" font-family="Avenir Next, Segoe UI, sans-serif" font-size="28" font-weight="700">Query spec</text>
+  <g font-family="Menlo, Monaco, monospace" font-size="15" fill="#CBD5E1">
+    <text x="1230" y="276">{</text>
+    <text x="1244" y="306">"source": "xarray",</text>
+    <text x="1244" y="336">"variable": "ozone",</text>
+    <text x="1244" y="366">"coords": ["time",</text>
+    <text x="1244" y="394">"lat", "lon"],</text>
+    <text x="1244" y="424">"horizon_hours": 24,</text>
+    <text x="1244" y="454">"transforms": [...]</text>
+    <text x="1230" y="484">}</text>
+  </g>
+  <text x="66" y="688" fill="#475569" font-family="Avenir Next, Segoe UI, sans-serif" font-size="20">
+    This is the strategic link: AtmosLens is already using xarray in a way that wants a first-class Lumen source and reusable xarray-native transforms.
+  </text>
+</svg>
+

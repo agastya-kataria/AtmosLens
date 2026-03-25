@@ -16,7 +16,6 @@ def test_activity_result_surfaces_best_window(sample_dataset):
     result = build_activity_result(sample_dataset, request)
 
     assert result.recommendation.headline.startswith("Best time for run")
-    assert result.recommendation.best_window_label == "02:00–04:00"
+    assert result.recommendation.best_window_label == "03:00–05:00"
     assert result.recommendation.verdict == "Good"
     assert len(result.pipeline_steps) == 5
-

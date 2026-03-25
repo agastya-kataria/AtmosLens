@@ -1,0 +1,97 @@
+<svg width="1400" height="920" viewBox="0 0 1400 920" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1400" y2="920" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7ED"/>
+      <stop offset="0.55" stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#E2E8F0"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="420" y2="240" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FFF8EE"/>
+    </linearGradient>
+  </defs>
+  <rect width="1400" height="920" rx="32" fill="url(#bg)"/>
+  <rect x="36" y="28" width="1328" height="864" rx="28" fill="#FFFFFF" fill-opacity="0.7" stroke="#CBD5E1"/>
+  <rect x="36" y="28" width="1328" height="68" rx="28" fill="#0F172A"/>
+  <text x="76" y="72" fill="#F8FAFC" font-family="Avenir Next, Segoe UI, sans-serif" font-size="30" font-weight="700">AtmosLens</text>
+  <text x="1224" y="70" fill="#CBD5E1" font-family="Avenir Next, Segoe UI, sans-serif" font-size="18">HoloViz + xarray demo</text>
+
+  <rect x="64" y="124" width="296" height="724" rx="24" fill="#0F172A"/>
+  <text x="90" y="174" fill="#F8FAFC" font-family="Avenir Next, Segoe UI, sans-serif" font-size="28" font-weight="700">Decision inputs</text>
+  <text x="90" y="208" fill="#94A3B8" font-family="Avenir Next, Segoe UI, sans-serif" font-size="16">Real Dublin forecast cube</text>
+
+  <g font-family="Avenir Next, Segoe UI, sans-serif">
+    <text x="90" y="268" fill="#CBD5E1" font-size="14" letter-spacing="2">LOCATION</text>
+    <rect x="90" y="280" width="240" height="44" rx="12" fill="#1E293B"/>
+    <text x="108" y="308" fill="#F8FAFC" font-size="18">Docklands</text>
+
+    <text x="90" y="360" fill="#CBD5E1" font-size="14" letter-spacing="2">PROFILE</text>
+    <rect x="90" y="372" width="240" height="44" rx="12" fill="#1E293B"/>
+    <text x="108" y="400" fill="#F8FAFC" font-size="18">Sensitive</text>
+
+    <text x="90" y="452" fill="#CBD5E1" font-size="14" letter-spacing="2">ACTIVITY</text>
+    <rect x="90" y="464" width="240" height="44" rx="12" fill="#1E293B"/>
+    <text x="108" y="492" fill="#F8FAFC" font-size="18">Run</text>
+
+    <text x="90" y="544" fill="#CBD5E1" font-size="14" letter-spacing="2">POLLUTANT</text>
+    <rect x="90" y="556" width="240" height="44" rx="12" fill="#1E293B"/>
+    <text x="108" y="584" fill="#F8FAFC" font-size="18">Ozone</text>
+
+    <text x="90" y="636" fill="#CBD5E1" font-size="14" letter-spacing="2">ROUTE</text>
+    <rect x="90" y="648" width="240" height="52" rx="12" fill="#1E293B"/>
+    <text x="108" y="678" fill="#F8FAFC" font-size="18">Sandyford to Docklands</text>
+
+    <text x="90" y="760" fill="#94A3B8" font-size="15">xarray cube: 48 x 9 x 11</text>
+    <text x="90" y="786" fill="#94A3B8" font-size="15">variables: PM2.5, NO2, Ozone, AQI</text>
+  </g>
+
+  <rect x="392" y="124" width="932" height="210" rx="24" fill="url(#card)" stroke="#E2E8F0"/>
+  <rect x="414" y="146" width="130" height="32" rx="16" fill="#D97706"/>
+  <text x="450" y="167" fill="#FFFFFF" font-family="Avenir Next, Segoe UI, sans-serif" font-size="18" font-weight="700">CAUTION</text>
+  <text x="414" y="214" fill="#0F172A" font-family="Avenir Next, Segoe UI, sans-serif" font-size="36" font-weight="700">Best time for run: 22:00-00:00</text>
+  <text x="414" y="256" fill="#475569" font-family="Avenir Next, Segoe UI, sans-serif" font-size="22">
+    Ozone stays elevated through the day, then eases late. AtmosLens highlights the cleanest window
+  </text>
+  <text x="414" y="286" fill="#475569" font-family="Avenir Next, Segoe UI, sans-serif" font-size="22">
+    and explains why the recommendation shifts toward the end of the forecast horizon.
+  </text>
+  <text x="414" y="318" fill="#0F172A" font-family="Avenir Next, Segoe UI, sans-serif" font-size="20" font-weight="600">Commute window: 23:00-23:40</text>
+  <text x="1140" y="318" fill="#475569" font-family="Avenir Next, Segoe UI, sans-serif" font-size="20">Current ozone: 85.0 ug/m3</text>
+
+  <rect x="392" y="362" width="528" height="486" rx="24" fill="#F8FAFC" stroke="#CBD5E1"/>
+  <text x="420" y="404" fill="#0F172A" font-family="Avenir Next, Segoe UI, sans-serif" font-size="28" font-weight="700">Interactive pollution map</text>
+  <text x="420" y="432" fill="#64748B" font-family="Avenir Next, Segoe UI, sans-serif" font-size="17">GeoViews + hvPlot over the same xarray slice used elsewhere in the app</text>
+  <rect x="420" y="458" width="472" height="356" rx="22" fill="#E2E8F0"/>
+  <g opacity="0.98">
+    <rect x="434" y="472" width="148" height="104" fill="#FDE68A"/>
+    <rect x="582" y="472" width="148" height="104" fill="#FDBA74"/>
+    <rect x="730" y="472" width="148" height="104" fill="#FB923C"/>
+    <rect x="434" y="576" width="148" height="104" fill="#FED7AA"/>
+    <rect x="582" y="576" width="148" height="104" fill="#FDBA74"/>
+    <rect x="730" y="576" width="148" height="104" fill="#F97316"/>
+    <rect x="434" y="680" width="148" height="120" fill="#FFEDD5"/>
+    <rect x="582" y="680" width="148" height="120" fill="#FDBA74"/>
+    <rect x="730" y="680" width="148" height="120" fill="#EA580C"/>
+  </g>
+  <polyline points="500,742 596,670 652,614 720,576 804,530" fill="none" stroke="#0F172A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="500" cy="742" r="9" fill="#0F172A"/>
+  <circle cx="804" cy="530" r="11" fill="#D97706" stroke="#0F172A" stroke-width="3"/>
+  <circle cx="688" cy="620" r="8" fill="#F8FAFC" stroke="#0F172A" stroke-width="3"/>
+  <circle cx="760" cy="500" r="8" fill="#F8FAFC" stroke="#0F172A" stroke-width="3"/>
+  <text x="812" y="524" fill="#0F172A" font-family="Avenir Next, Segoe UI, sans-serif" font-size="15" font-weight="700">Docklands</text>
+
+  <rect x="946" y="362" width="378" height="232" rx="24" fill="#F8FAFC" stroke="#CBD5E1"/>
+  <text x="974" y="404" fill="#0F172A" font-family="Avenir Next, Segoe UI, sans-serif" font-size="28" font-weight="700">24-hour forecast</text>
+  <rect x="974" y="432" width="322" height="130" rx="18" fill="#FFFFFF" stroke="#E2E8F0"/>
+  <rect x="1176" y="444" width="84" height="106" rx="16" fill="#FDE68A" fill-opacity="0.7"/>
+  <polyline points="994,532 1028,520 1062,506 1096,494 1130,480 1164,470 1198,452 1232,448 1266,454" fill="none" stroke="#0F766E" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="974" y="580" fill="#475569" font-family="Avenir Next, Segoe UI, sans-serif" font-size="18">Bands show profile-adjusted thresholds. The highlighted span is the best window.</text>
+
+  <rect x="946" y="616" width="378" height="232" rx="24" fill="#F8FAFC" stroke="#CBD5E1"/>
+  <text x="974" y="658" fill="#0F172A" font-family="Avenir Next, Segoe UI, sans-serif" font-size="28" font-weight="700">Commute exposure</text>
+  <rect x="974" y="686" width="322" height="130" rx="18" fill="#FFFFFF" stroke="#E2E8F0"/>
+  <rect x="1222" y="698" width="48" height="106" rx="16" fill="#CCFBF1" fill-opacity="0.8"/>
+  <polyline points="994,774 1040,770 1086,766 1132,756 1178,744 1224,724 1270,712" fill="none" stroke="#0F172A" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="974" y="842" fill="#475569" font-family="Avenir Next, Segoe UI, sans-serif" font-size="18">Route scoring samples the geometry against the gridded forecast instead of using a single city label.</text>
+</svg>
+

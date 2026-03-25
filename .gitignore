@@ -1,4 +1,5 @@
 .venv/
+.mpl-cache/
 __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
@@ -6,4 +7,3 @@ __pycache__/
 *.pyo
 *.html
 *.log
-
