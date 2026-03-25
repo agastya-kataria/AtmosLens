@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable
@@ -20,6 +21,7 @@ SUPPORTED_POLLUTANTS = ("pm2_5", "nitrogen_dioxide", "ozone", "european_aqi")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATA_PATH = REPO_ROOT / "data" / "sample_forecast.nc"
 LIVE_DATA_PATH = REPO_ROOT / "data" / "live_forecast.nc"
+MAX_POINTS_PER_REQUEST = 100
 
 
 @dataclass(frozen=True)
@@ -280,6 +282,10 @@ def _fetch_json(url: str, timeout: int = 90) -> dict | list:
         return json.load(response)
 
 
+def _chunked(items: list[tuple[float, float]], size: int) -> list[list[tuple[float, float]]]:
+    return [items[index : index + size] for index in range(0, len(items), size)]
+
+
 def _normalise_dataset(ds: xr.Dataset) -> xr.Dataset:
     rename_map = {}
     if "latitude" in ds.coords and "lat" not in ds.coords:
@@ -318,20 +324,22 @@ def fetch_open_meteo_grid(
     if not pollutant_list:
         raise ValueError("At least one supported pollutant must be requested.")
 
-    query = urlencode(
-        {
-            "latitude": ",".join(f"{lat:.4f}" for lat, _ in points),
-            "longitude": ",".join(f"{lon:.4f}" for _, lon in points),
-            "hourly": ",".join(pollutant_list),
-            "forecast_hours": config.forecast_hours,
-            "timezone": config.timezone,
-            "domains": config.domains,
-        }
-    )
+    records: list[dict] = []
+    for batch in _chunked(points, MAX_POINTS_PER_REQUEST):
+        query = urlencode(
+            {
+                "latitude": ",".join(f"{lat:.4f}" for lat, _ in batch),
+                "longitude": ",".join(f"{lon:.4f}" for _, lon in batch),
+                "hourly": ",".join(pollutant_list),
+                "forecast_hours": config.forecast_hours,
+                "timezone": config.timezone,
+                "domains": config.domains,
+            }
+        )
+        payload = _fetch_json(f"{OPEN_METEO_AIR_QUALITY_URL}?{query}", timeout=timeout)
+        batch_records = payload if isinstance(payload, list) else [payload]
+        records.extend(batch_records)
 
-    payload = _fetch_json(f"{OPEN_METEO_AIR_QUALITY_URL}?{query}", timeout=timeout)
-
-    records = payload if isinstance(payload, list) else [payload]
     if len(records) != len(points):
         raise ValueError(f"Expected {len(points)} point records but received {len(records)}")
 
@@ -498,19 +506,94 @@ def _search_description(result: dict[str, object]) -> str:
     return " | ".join(parts)
 
 
+def _query_variants(query: str) -> list[str]:
+    clean_query = " ".join(query.split())
+    tokens = [token for token in re.split(r"[\s,]+", clean_query) if token]
+    variants = [clean_query]
+    if len(tokens) >= 2:
+        variants.extend(
+            [
+                f"{tokens[0]}, {' '.join(tokens[1:])}",
+                f"{' '.join(tokens[1:])} {tokens[0]}",
+                f"{tokens[-1]}, {' '.join(tokens[:-1])}",
+                " ".join(tokens[:2]),
+                " ".join(tokens[-2:]),
+                tokens[0],
+                tokens[-1],
+            ]
+        )
+    elif tokens:
+        variants.append(tokens[0])
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for variant in variants:
+        candidate = " ".join(variant.split()).strip(" ,")
+        normalised = candidate.casefold()
+        if len(candidate) < 2 or normalised in seen:
+            continue
+        seen.add(normalised)
+        deduped.append(candidate)
+    return deduped
+
+
+def _result_search_text(result: dict[str, object]) -> str:
+    return " ".join(
+        str(result.get(field, "")).strip()
+        for field in ("name", "admin1", "admin2", "country")
+    ).casefold()
+
+
+def _search_score(result: dict[str, object], query_tokens: list[str], variant_index: int) -> tuple[float, int, int, int]:
+    search_text = _result_search_text(result)
+    overlap = sum(token in search_text for token in query_tokens)
+    exact_name = int(str(result.get("name", "")).strip().casefold() == " ".join(query_tokens))
+    population = int(float(result.get("population") or 0))
+    feature = str(result.get("feature_code", "")).strip().upper()
+    feature_bonus = {
+        "PPLC": 5,
+        "PPLA": 4,
+        "PPLA2": 3,
+        "PPLA3": 2,
+        "PPLA4": 1,
+        "PPL": 2,
+        "ADM1": 1,
+        "ADM2": 1,
+        "ADM3": 1,
+        "ADM4": 1,
+    }.get(feature, 0)
+    return (overlap + exact_name + feature_bonus / 10.0, -variant_index, population, exact_name)
+
+
 def search_places(query: str, *, count: int = 6, language: str = "en", timeout: int = 30) -> list[LocationDefinition]:
     clean_query = " ".join(query.split())
     if len(clean_query) < 2:
         raise ValueError("Type at least two characters before searching for a place.")
 
-    params = urlencode({"name": clean_query, "count": count, "language": language, "format": "json"})
-    payload = _fetch_json(f"{OPEN_METEO_GEOCODING_URL}?{params}", timeout=timeout)
-    results = payload.get("results", []) if isinstance(payload, dict) else []
-    if not results:
+    query_tokens = [token.casefold() for token in re.split(r"[\s,]+", clean_query) if token]
+    aggregated: list[tuple[tuple[float, int, int, int], dict[str, object]]] = []
+    seen_results: set[tuple[str, float, float]] = set()
+
+    for variant_index, variant in enumerate(_query_variants(clean_query)):
+        params = urlencode({"name": variant, "count": max(count, 8), "language": language, "format": "json"})
+        payload = _fetch_json(f"{OPEN_METEO_GEOCODING_URL}?{params}", timeout=timeout)
+        results = payload.get("results", []) if isinstance(payload, dict) else []
+        for result in results:
+            lat = round(float(result["latitude"]), 5)
+            lon = round(float(result["longitude"]), 5)
+            key = (str(result.get("name", "")).strip().casefold(), lat, lon)
+            if key in seen_results:
+                continue
+            seen_results.add(key)
+            aggregated.append((_search_score(result, query_tokens, variant_index), result))
+        if len(aggregated) >= count * 3:
+            break
+
+    if not aggregated:
         raise ValueError(f"No places matched '{clean_query}'. Try a city, district, or postcode.")
 
     locations = []
-    for result in results:
+    for _, result in sorted(aggregated, key=lambda item: item[0], reverse=True)[:count]:
         lat = float(result["latitude"])
         lon = float(result["longitude"])
         timezone = str(result.get("timezone") or "auto")

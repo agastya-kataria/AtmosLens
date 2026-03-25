@@ -1,6 +1,6 @@
 # AtmosLens
 
-AtmosLens is an air-quality decision copilot built with the HoloViz ecosystem surfaced through [`holoviz/holoviz`](https://github.com/holoviz/holoviz). It turns a real xarray-backed forecast cube into recommendations such as when to run, when to ventilate, and which commute departure window minimizes exposure, and now supports global presets plus editable coordinates and route endpoints.
+AtmosLens is an air-quality decision copilot built with the HoloViz ecosystem surfaced through [`holoviz/holoviz`](https://github.com/holoviz/holoviz). It turns a real xarray-backed forecast cube into recommendations such as when to run, when to ventilate, and which commute departure window minimizes exposure, and now supports typed global place search, editable coordinates, and route endpoints.
 
 ![AtmosLens app preview](assets/atmoslens-preview.svg)
 
@@ -24,8 +24,8 @@ This repo is intentionally scoped as a strong March 31 artifact: something a Hol
 - **Interactive Pollution Map**: xarray-backed gridded data rendered with GeoViews + hvPlot.
 - **24-hour Forecast Timeline**: threshold bands and the highlighted best window.
 - **Recommendation Card**: concise user-facing guidance instead of a raw forecast dump.
-- **Route / Commute Exposure Window**: preset or user-edited route endpoints sampled against the same gridded forecast across multiple departure times.
-- **Global Region Refresh**: choose a city preset or edit a center point anywhere on Earth, refresh the forecast cube, and reuse the same xarray pipeline.
+- **Route / Commute Exposure Window**: preset or search-driven route endpoints sampled against the same gridded forecast across multiple departure times.
+- **Global Search + Region Refresh**: type a city, district, or postcode anywhere on Earth, refresh the forecast cube, and reuse the same xarray pipeline.
 
 The preview above uses the real Dublin sample cube with `Ozone` selected because it produces a more legible risk gradient than PM2.5 on the fetched March 25 forecast.
 
@@ -87,7 +87,7 @@ The repo includes `data/sample_forecast.nc`. To regenerate it from the Open-Mete
 .venv/bin/atmoslens-fetch --output data/sample_forecast.nc
 ```
 
-Inside the app, you can also change the forecast region and click `Refresh Forecast Cube` to fetch a new live xarray dataset for that area.
+Inside the app, you can type a decision point into the search bar to geocode it anywhere in the world and fetch a live xarray forecast cube for that area. Route searches also auto-fit a local corridor, and `Load Route Corridor Forecast` refreshes the commute cube after you resolve both endpoints.
 
 ## Data provenance
 
@@ -125,7 +125,7 @@ The fetch path intentionally builds a small regular grid around a real metro reg
 
 Current local status:
 
-- `4 passed` on Python `3.12.12`
+- `7 passed` on Python `3.12.12`
 - app object verified by importing `build_app()` and constructing the `FastListTemplate`
 
 ## Demo framing for HoloViz / GSoC

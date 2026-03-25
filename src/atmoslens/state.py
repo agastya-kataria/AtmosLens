@@ -273,11 +273,13 @@ class AtmosLensState(param.Parameterized):
         self.location_name = location.name
         self.location_lat = location.lat
         self.location_lon = location.lon
+        self.forecast_domain = "auto"
         if location.timezone and location.timezone != "auto":
             self.forecast_timezone = location.timezone
         self.fit_region_to_points([(location.lat, location.lon)], label=f"{location.name} search region")
+        self._seed_route_from_location()
         self.status_message = (
-            f"Resolved {location.name}. Region recentered around the searched place. Click 'Refresh Forecast Cube' to fetch that area."
+            f"Resolved {location.name}. Region recentered around the searched place and the commute route was reset to a local corridor."
         )
 
     def apply_route_start_search_result(self, index: int) -> None:
@@ -286,9 +288,9 @@ class AtmosLensState(param.Parameterized):
         self.route_start_lat = location.lat
         self.route_start_lon = location.lon
         self._refresh_route_name()
-        self._autofit_region_from_current_geometry(location.timezone)
+        self._autofit_region_from_route(focus="start", timezone_hint=location.timezone)
         self.status_message = (
-            f"Resolved route start as {location.name}. Region was auto-fit to the current route geometry."
+            f"Resolved route start as {location.name}. Region was focused on the start side of the current route."
         )
 
     def apply_route_end_search_result(self, index: int) -> None:
@@ -297,17 +299,61 @@ class AtmosLensState(param.Parameterized):
         self.route_end_lat = location.lat
         self.route_end_lon = location.lon
         self._refresh_route_name()
-        self._autofit_region_from_current_geometry(location.timezone)
+        self._autofit_region_from_route(focus="end", timezone_hint=location.timezone)
+        synced_location = self._sync_location_to_route_end_if_remote()
+        location_suffix = f" Decision point moved to {self.route_end_name} for consistency." if synced_location else ""
         self.status_message = (
-            f"Resolved route end as {location.name}. Region was auto-fit to the current route geometry."
+            f"Resolved route end as {location.name}. Region was auto-fit to the current route corridor.{location_suffix}"
         )
 
     def _refresh_route_name(self) -> None:
         self.route_name = f"{self.route_start_name} to {self.route_end_name}"
 
-    def _autofit_region_from_current_geometry(self, timezone_hint: str | None = None) -> None:
-        points = [(self.location_lat, self.location_lon), (self.route_start_lat, self.route_start_lon), (self.route_end_lat, self.route_end_lon)]
+    def _seed_route_from_location(self) -> None:
+        lat_offset = max(0.045, min(0.11, self.region_lat_span * 0.18))
+        lon_offset = max(0.06, min(0.14, self.region_lon_span * 0.18))
+        start_lat = self.location_lat - lat_offset if self.location_lat - lat_offset >= -89.5 else self.location_lat + lat_offset
+        start_lon = self.location_lon - lon_offset if self.location_lon - lon_offset >= -179.5 else self.location_lon + lon_offset
+        self.route_start_name = "Approach"
+        self.route_start_lat = round(start_lat, 4)
+        self.route_start_lon = round(start_lon, 4)
+        self.route_end_name = self.location_name
+        self.route_end_lat = self.location_lat
+        self.route_end_lon = self.location_lon
+        self.route_name = f"Approach to {self.location_name}"
+        self.route_duration_minutes = 35
+
+    def _route_points_are_local(self, *, max_lat_gap: float = 8.0, max_lon_gap: float = 8.0) -> bool:
+        return (
+            abs(self.route_start_lat - self.route_end_lat) <= max_lat_gap
+            and abs(self.route_start_lon - self.route_end_lon) <= max_lon_gap
+        )
+
+    def _sync_location_to_route_end_if_remote(self) -> bool:
+        if not self._route_points_are_local():
+            return False
+        latitudes = [self.route_start_lat, self.route_end_lat]
+        longitudes = [self.route_start_lon, self.route_end_lon]
+        lat_pad = max(0.25, abs(latitudes[0] - latitudes[1]) * 1.25)
+        lon_pad = max(0.35, abs(longitudes[0] - longitudes[1]) * 1.25)
+        if (
+            min(latitudes) - lat_pad <= self.location_lat <= max(latitudes) + lat_pad
+            and min(longitudes) - lon_pad <= self.location_lon <= max(longitudes) + lon_pad
+        ):
+            return False
+        self.location_name = self.route_end_name
+        self.location_lat = self.route_end_lat
+        self.location_lon = self.route_end_lon
+        return True
+
+    def _autofit_region_from_route(self, *, focus: str, timezone_hint: str | None = None) -> None:
+        route_points = [(self.route_start_lat, self.route_start_lon), (self.route_end_lat, self.route_end_lon)]
+        if self._route_points_are_local():
+            points = route_points
+        else:
+            points = [route_points[0] if focus == "start" else route_points[-1]]
         self.fit_region_to_points(points, label=f"{self.route_name or self.route_start_name} corridor")
+        self.forecast_domain = "auto"
         if timezone_hint and timezone_hint != "auto":
             self.forecast_timezone = timezone_hint
 

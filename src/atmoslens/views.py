@@ -56,7 +56,14 @@ def _error_panel(title: str, message: str):
 
 
 def _format_value(value: float) -> str:
-    return f"{value:.1f}"
+    magnitude = abs(float(value))
+    if magnitude >= 100:
+        return f"{value:.0f}"
+    if magnitude >= 10:
+        return f"{value:.1f}"
+    if magnitude >= 1:
+        return f"{value:.2f}"
+    return f"{value:.3f}"
 
 
 def render_recommendation_card(state: AtmosLensState):
@@ -145,7 +152,8 @@ def render_map_panel(state: AtmosLensState):
             (
                 f"**Spatial view.** GeoViews + hvPlot build the geographic layer, Datashader rasterizes the xarray slice, "
                 f"and the same cube is sampled again for the route overlay. Current cube: `{state.summary()['region_name']}`. "
-                f"Current map slice ranges from `{_format_value(slice_min)}` to `{_format_value(slice_max)}` {meta['unit']}."
+                f"Current map slice ranges from `{_format_value(slice_min)}` to `{_format_value(slice_max)}` {meta['unit']}`, "
+                f"with the color scale clipped to the 5th-95th percentile so global maps stay readable."
             ),
             css_classes=["atmoslens-note"],
         )
@@ -287,28 +295,32 @@ def build_sidebar(state: AtmosLensState):
     location_search_button = pn.widgets.Button(name="Resolve place", button_type="primary", icon="map-search")
     location_matches = pn.widgets.RadioBoxGroup(name="Location matches", options={}, visible=False)
     location_search_note = pn.pane.Markdown("", css_classes=["atmoslens-note"])
+    location_select_guard = {"active": False}
 
     def _search_location(_):
         try:
             labels = state.search_location(location_search.value)
             location_matches.options = {label: index for index, label in enumerate(labels)}
-            location_matches.value = None
-            location_matches.visible = True
+            location_select_guard["active"] = True
+            location_matches.value = 0 if labels else None
+            location_select_guard["active"] = False
+            location_matches.visible = bool(labels)
             pn.state.notifications.info("Fetching a live forecast cube for the searched place...")
             state.refresh_dataset()
             location_search_note.object = (
-                "Top geocoding matches are shown below. The first result was applied automatically and the live forecast cube was refreshed. "
-                "Click another result if the query was ambiguous, then refresh again if needed."
+                "Top geocoding matches are shown below. The first result is selected automatically, the forecast cube is refreshed immediately, "
+                "and you can click another match if the query was ambiguous."
             )
             pn.state.notifications.success(f"Resolved {state.location_name} and loaded a live forecast cube for that area.")
         except Exception as exc:  # noqa: BLE001
+            location_select_guard["active"] = False
             location_matches.options = {}
             location_matches.visible = False
             location_search_note.object = f"**Search error**\n\n{exc}"
             pn.state.notifications.error(str(exc))
 
     def _select_location(event):
-        if event.new is None:
+        if location_select_guard["active"] or event.new is None:
             return
         try:
             state.apply_location_search_result(int(event.new))
@@ -328,23 +340,29 @@ def build_sidebar(state: AtmosLensState):
     route_start_button = pn.widgets.Button(name="Resolve start", button_type="primary", icon="route")
     route_start_matches = pn.widgets.RadioBoxGroup(name="Route start matches", options={}, visible=False)
     route_start_note = pn.pane.Markdown("", css_classes=["atmoslens-note"])
+    route_start_select_guard = {"active": False}
 
     def _search_route_start(_):
         try:
             labels = state.search_route_start(route_start_search.value)
             route_start_matches.options = {label: index for index, label in enumerate(labels)}
-            route_start_matches.value = None
-            route_start_matches.visible = True
-            route_start_note.object = "The top match was applied to the route start and the region was auto-fit."
+            route_start_select_guard["active"] = True
+            route_start_matches.value = 0 if labels else None
+            route_start_select_guard["active"] = False
+            route_start_matches.visible = bool(labels)
+            route_start_note.object = (
+                "The top match was applied to the route start and selected below. Search the route end next, then load the corridor forecast."
+            )
             pn.state.notifications.success(f"Resolved route start as {state.route_start_name}.")
         except Exception as exc:  # noqa: BLE001
+            route_start_select_guard["active"] = False
             route_start_matches.options = {}
             route_start_matches.visible = False
             route_start_note.object = f"**Start search error**\n\n{exc}"
             pn.state.notifications.error(str(exc))
 
     def _select_route_start(event):
-        if event.new is None:
+        if route_start_select_guard["active"] or event.new is None:
             return
         try:
             state.apply_route_start_search_result(int(event.new))
@@ -361,23 +379,29 @@ def build_sidebar(state: AtmosLensState):
     route_end_button = pn.widgets.Button(name="Resolve end", button_type="primary", icon="route-2")
     route_end_matches = pn.widgets.RadioBoxGroup(name="Route end matches", options={}, visible=False)
     route_end_note = pn.pane.Markdown("", css_classes=["atmoslens-note"])
+    route_end_select_guard = {"active": False}
 
     def _search_route_end(_):
         try:
             labels = state.search_route_end(route_end_search.value)
             route_end_matches.options = {label: index for index, label in enumerate(labels)}
-            route_end_matches.value = None
-            route_end_matches.visible = True
-            route_end_note.object = "The top match was applied to the route end and the region was auto-fit."
+            route_end_select_guard["active"] = True
+            route_end_matches.value = 0 if labels else None
+            route_end_select_guard["active"] = False
+            route_end_matches.visible = bool(labels)
+            route_end_note.object = (
+                "The top match was applied to the route end and selected below. Load the corridor forecast to score departure times on that route."
+            )
             pn.state.notifications.success(f"Resolved route end as {state.route_end_name}.")
         except Exception as exc:  # noqa: BLE001
+            route_end_select_guard["active"] = False
             route_end_matches.options = {}
             route_end_matches.visible = False
             route_end_note.object = f"**End search error**\n\n{exc}"
             pn.state.notifications.error(str(exc))
 
     def _select_route_end(event):
-        if event.new is None:
+        if route_end_select_guard["active"] or event.new is None:
             return
         try:
             state.apply_route_end_search_result(int(event.new))
@@ -386,6 +410,22 @@ def build_sidebar(state: AtmosLensState):
 
     route_end_button.on_click(_search_route_end)
     route_end_matches.param.watch(_select_route_end, "value")
+    route_refresh_button = pn.widgets.Button(
+        name="Load Route Corridor Forecast",
+        button_type="primary",
+        icon="navigation",
+        sizing_mode="stretch_width",
+    )
+
+    def _refresh_route(_):
+        try:
+            pn.state.notifications.info("Fetching a corridor forecast for the current route geometry...")
+            state.refresh_dataset()
+            pn.state.notifications.success(f"Loaded a route corridor forecast for {state.route_name}.")
+        except Exception as exc:  # noqa: BLE001
+            pn.state.notifications.error(str(exc))
+
+    route_refresh_button.on_click(_refresh_route)
 
     region_controls = pn.Param(
         state,
@@ -492,6 +532,7 @@ def build_sidebar(state: AtmosLensState):
                 route_end_button,
                 route_end_matches,
                 route_end_note,
+                route_refresh_button,
                 route_controls,
             ),
             title="Commute Route Search",
