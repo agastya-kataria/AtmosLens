@@ -1,6 +1,6 @@
 # AtmosLens
 
-AtmosLens is an air-quality decision copilot built with the HoloViz ecosystem surfaced through [`holoviz/holoviz`](https://github.com/holoviz/holoviz). It turns a real xarray-backed forecast cube into recommendations such as when to run, when to ventilate, and which commute departure window minimizes exposure.
+AtmosLens is an air-quality decision copilot built with the HoloViz ecosystem surfaced through [`holoviz/holoviz`](https://github.com/holoviz/holoviz). It turns a real xarray-backed forecast cube into recommendations such as when to run, when to ventilate, and which commute departure window minimizes exposure, and now supports global presets plus editable coordinates and route endpoints.
 
 ![AtmosLens app preview](assets/atmoslens-preview.svg)
 
@@ -24,7 +24,8 @@ This repo is intentionally scoped as a strong March 31 artifact: something a Hol
 - **Interactive Pollution Map**: xarray-backed gridded data rendered with GeoViews + hvPlot.
 - **24-hour Forecast Timeline**: threshold bands and the highlighted best window.
 - **Recommendation Card**: concise user-facing guidance instead of a raw forecast dump.
-- **Route / Commute Exposure Window**: a fixed demo route sampled against the same gridded forecast across multiple departure times.
+- **Route / Commute Exposure Window**: preset or user-edited route endpoints sampled against the same gridded forecast across multiple departure times.
+- **Global Region Refresh**: choose a city preset or edit a center point anywhere on Earth, refresh the forecast cube, and reuse the same xarray pipeline.
 
 The preview above uses the real Dublin sample cube with `Ozone` selected because it produces a more legible risk gradient than PM2.5 on the fetched March 25 forecast.
 
@@ -85,6 +86,8 @@ The repo includes `data/sample_forecast.nc`. To regenerate it from the Open-Mete
 ```bash
 .venv/bin/atmoslens-fetch --output data/sample_forecast.nc
 ```
+
+Inside the app, you can also change the forecast region and click `Refresh Forecast Cube` to fetch a new live xarray dataset for that area.
 
 ## Data provenance
 

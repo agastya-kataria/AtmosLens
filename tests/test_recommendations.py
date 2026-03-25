@@ -7,6 +7,8 @@ from atmoslens.recommendations import build_activity_result
 def test_activity_result_surfaces_best_window(sample_dataset):
     request = AnalysisRequest(
         location_name="Docklands",
+        location_lat=53.3478,
+        location_lon=-6.2374,
         profile_name="General",
         activity_name="Run",
         pollutant="pm2_5",

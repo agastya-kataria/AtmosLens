@@ -22,7 +22,7 @@ def apply_mode_filter(series: pd.Series, mode: str, horizon_hours: int = 24) -> 
     scoped = series.sort_index()
     horizon_end = scoped.index.min() + pd.Timedelta(hours=horizon_hours)
     scoped = scoped[scoped.index < horizon_end]
-    if mode == "Next 24 hours":
+    if mode in {"Next 24 hours", "Any hour in horizon"}:
         return scoped
 
     start_hour, end_hour = DAYPARTS[mode]
@@ -117,4 +117,3 @@ def improvement_phrase(current_score: float, best_score: float) -> str:
     if delta < 25:
         return "Waiting materially cuts predicted exposure."
     return "The cleaner window is meaningfully better than going now."
-

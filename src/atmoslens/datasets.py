@@ -6,18 +6,20 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urlencode
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-from atmoslens.models import RouteDefinition
+from atmoslens.models import LocationDefinition, RouteDefinition
 
 OPEN_METEO_AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
+OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 SUPPORTED_POLLUTANTS = ("pm2_5", "nitrogen_dioxide", "ozone", "european_aqi")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATA_PATH = REPO_ROOT / "data" / "sample_forecast.nc"
+LIVE_DATA_PATH = REPO_ROOT / "data" / "live_forecast.nc"
 
 
 @dataclass(frozen=True)
@@ -27,65 +29,238 @@ class RegionConfig:
     lat_max: float
     lon_min: float
     lon_max: float
-    n_lat: int = 9
-    n_lon: int = 11
+    n_lat: int = 15
+    n_lon: int = 17
     forecast_hours: int = 48
-    timezone: str = "Europe/Dublin"
-    domains: str = "cams_europe"
+    timezone: str = "auto"
+    domains: str = "auto"
 
 
-DEFAULT_REGION = RegionConfig(
-    name="Dublin commuter belt",
-    lat_min=53.18,
-    lat_max=53.43,
-    lon_min=-6.42,
-    lon_max=-6.03,
-)
+def region_from_center(
+    name: str,
+    center_lat: float,
+    center_lon: float,
+    *,
+    lat_span: float,
+    lon_span: float,
+    n_lat: int = 15,
+    n_lon: int = 17,
+    forecast_hours: int = 48,
+    timezone: str = "auto",
+    domains: str = "auto",
+) -> RegionConfig:
+    half_lat = lat_span / 2.0
+    half_lon = lon_span / 2.0
+    lat_min = max(-89.5, center_lat - half_lat)
+    lat_max = min(89.5, center_lat + half_lat)
+    lon_min = max(-179.5, center_lon - half_lon)
+    lon_max = min(179.5, center_lon + half_lon)
+    return RegionConfig(
+        name=name,
+        lat_min=lat_min,
+        lat_max=lat_max,
+        lon_min=lon_min,
+        lon_max=lon_max,
+        n_lat=n_lat,
+        n_lon=n_lon,
+        forecast_hours=forecast_hours,
+        timezone=timezone,
+        domains=domains,
+    )
 
-DEFAULT_LOCATIONS: dict[str, tuple[float, float]] = {
-    "Docklands": (53.3478, -6.2374),
-    "Phoenix Park": (53.3561, -6.3298),
-    "Sandyford": (53.2749, -6.2256),
-    "Tallaght": (53.2858, -6.3730),
-    "Howth": (53.3871, -6.0653),
-    "Bray": (53.2028, -6.1093),
+
+def _line_route(
+    name: str,
+    start_label: str,
+    start: tuple[float, float],
+    end_label: str,
+    end: tuple[float, float],
+    *,
+    duration_minutes: int,
+    region_name: str,
+    description: str,
+) -> RouteDefinition:
+    lat1, lon1 = start
+    lat2, lon2 = end
+    mid1 = (lat1 + (lat2 - lat1) * 0.33, lon1 + (lon2 - lon1) * 0.33)
+    mid2 = (lat1 + (lat2 - lat1) * 0.66, lon1 + (lon2 - lon1) * 0.66)
+    return RouteDefinition(
+        name=name,
+        points=(start, mid1, mid2, end),
+        duration_minutes=duration_minutes,
+        description=description,
+        start_label=start_label,
+        end_label=end_label,
+        region_name=region_name,
+    )
+
+
+REGION_PRESETS: dict[str, RegionConfig] = {
+    "Dublin Metro": region_from_center(
+        "Dublin Metro", 53.3498, -6.2603, lat_span=0.42, lon_span=0.55, timezone="Europe/Dublin", domains="cams_europe"
+    ),
+    "London Metro": region_from_center(
+        "London Metro", 51.5072, -0.1276, lat_span=0.55, lon_span=0.85, timezone="Europe/London"
+    ),
+    "New York Metro": region_from_center(
+        "New York Metro", 40.7128, -74.0060, lat_span=0.65, lon_span=0.9, timezone="America/New_York"
+    ),
+    "Los Angeles Basin": region_from_center(
+        "Los Angeles Basin", 34.0522, -118.2437, lat_span=0.7, lon_span=1.1, timezone="America/Los_Angeles"
+    ),
+    "Delhi NCR": region_from_center(
+        "Delhi NCR", 28.6139, 77.2090, lat_span=0.7, lon_span=1.0, timezone="Asia/Kolkata"
+    ),
+    "Tokyo Metro": region_from_center(
+        "Tokyo Metro", 35.6762, 139.6503, lat_span=0.65, lon_span=0.9, timezone="Asia/Tokyo"
+    ),
+    "Sao Paulo Metro": region_from_center(
+        "Sao Paulo Metro", -23.5505, -46.6333, lat_span=0.7, lon_span=0.9, timezone="America/Sao_Paulo"
+    ),
+    "Lagos Metro": region_from_center(
+        "Lagos Metro", 6.5244, 3.3792, lat_span=0.55, lon_span=0.8, timezone="Africa/Lagos"
+    ),
+    "Singapore": region_from_center(
+        "Singapore", 1.3521, 103.8198, lat_span=0.35, lon_span=0.5, timezone="Asia/Singapore"
+    ),
+    "Sydney Metro": region_from_center(
+        "Sydney Metro", -33.8688, 151.2093, lat_span=0.8, lon_span=1.0, timezone="Australia/Sydney"
+    ),
+    "Cape Town Metro": region_from_center(
+        "Cape Town Metro", -33.9249, 18.4241, lat_span=0.8, lon_span=1.0, timezone="Africa/Johannesburg"
+    ),
 }
 
-DEFAULT_ROUTES: dict[str, RouteDefinition] = {
-    "Sandyford to Docklands": RouteDefinition(
-        name="Sandyford to Docklands",
-        points=(
-            (53.2749, -6.2256),
-            (53.2892, -6.2384),
-            (53.3152, -6.2522),
-            (53.3478, -6.2374),
-        ),
+LOCATION_PRESETS: dict[str, LocationDefinition] = {
+    "Dublin Docklands": LocationDefinition("Docklands", 53.3478, -6.2374, "Europe/Dublin", "Dublin Metro"),
+    "London Soho": LocationDefinition("Soho", 51.5136, -0.1365, "Europe/London", "London Metro"),
+    "New York Midtown": LocationDefinition("Midtown", 40.7549, -73.9840, "America/New_York", "New York Metro"),
+    "Los Angeles Downtown": LocationDefinition("Downtown LA", 34.0407, -118.2468, "America/Los_Angeles", "Los Angeles Basin"),
+    "Delhi Connaught Place": LocationDefinition("Connaught Place", 28.6315, 77.2167, "Asia/Kolkata", "Delhi NCR"),
+    "Tokyo Marunouchi": LocationDefinition("Marunouchi", 35.6812, 139.7671, "Asia/Tokyo", "Tokyo Metro"),
+    "Sao Paulo Paulista": LocationDefinition("Paulista", -23.5614, -46.6566, "America/Sao_Paulo", "Sao Paulo Metro"),
+    "Lagos Marina": LocationDefinition("Marina", 6.4541, 3.3947, "Africa/Lagos", "Lagos Metro"),
+    "Singapore Marina Bay": LocationDefinition("Marina Bay", 1.2823, 103.8588, "Asia/Singapore", "Singapore"),
+    "Sydney CBD": LocationDefinition("Sydney CBD", -33.8688, 151.2093, "Australia/Sydney", "Sydney Metro"),
+    "Cape Town Foreshore": LocationDefinition("Foreshore", -33.9157, 18.4291, "Africa/Johannesburg", "Cape Town Metro"),
+}
+
+ROUTE_PRESETS: dict[str, RouteDefinition] = {
+    "Sandyford to Docklands": _line_route(
+        "Sandyford to Docklands",
+        "Sandyford",
+        (53.2749, -6.2256),
+        "Docklands",
+        (53.3478, -6.2374),
         duration_minutes=40,
+        region_name="Dublin Metro",
         description="South suburbs into the city core; useful for commute exposure testing.",
     ),
-    "Tallaght to City Centre": RouteDefinition(
-        name="Tallaght to City Centre",
-        points=(
-            (53.2858, -6.3730),
-            (53.2999, -6.3322),
-            (53.3208, -6.2919),
-            (53.3498, -6.2603),
-        ),
-        duration_minutes=45,
-        description="Western approach into the city with a broad transect across the grid.",
+    "Soho to Canary Wharf": _line_route(
+        "Soho to Canary Wharf",
+        "Soho",
+        (51.5136, -0.1365),
+        "Canary Wharf",
+        (51.5054, -0.0235),
+        duration_minutes=42,
+        region_name="London Metro",
+        description="West End to east-side business district commute through central London.",
     ),
-    "Howth to Docklands": RouteDefinition(
-        name="Howth to Docklands",
-        points=(
-            (53.3871, -6.0653),
-            (53.3762, -6.1128),
-            (53.3655, -6.1715),
-            (53.3478, -6.2374),
-        ),
-        duration_minutes=35,
-        description="Coastal inbound route that often benefits from cleaner early-hour flow.",
+    "Prospect Park to Midtown": _line_route(
+        "Prospect Park to Midtown",
+        "Prospect Park",
+        (40.6602, -73.9690),
+        "Midtown",
+        (40.7549, -73.9840),
+        duration_minutes=46,
+        region_name="New York Metro",
+        description="Brooklyn-to-Manhattan style commute crossing a dense urban core.",
+    ),
+    "Santa Monica to Downtown LA": _line_route(
+        "Santa Monica to Downtown LA",
+        "Santa Monica",
+        (34.0195, -118.4912),
+        "Downtown LA",
+        (34.0407, -118.2468),
+        duration_minutes=55,
+        region_name="Los Angeles Basin",
+        description="Coast-to-core route across a broad basin where timing materially changes exposure.",
+    ),
+    "Hauz Khas to Connaught Place": _line_route(
+        "Hauz Khas to Connaught Place",
+        "Hauz Khas",
+        (28.5494, 77.2001),
+        "Connaught Place",
+        (28.6315, 77.2167),
+        duration_minutes=38,
+        region_name="Delhi NCR",
+        description="Dense urban Delhi route with a strong need for hour-by-hour exposure guidance.",
+    ),
+    "Shibuya to Marunouchi": _line_route(
+        "Shibuya to Marunouchi",
+        "Shibuya",
+        (35.6595, 139.7005),
+        "Marunouchi",
+        (35.6812, 139.7671),
+        duration_minutes=30,
+        region_name="Tokyo Metro",
+        description="Central Tokyo trip where a short commute still benefits from route-time optimization.",
+    ),
+    "Vila Mariana to Paulista": _line_route(
+        "Vila Mariana to Paulista",
+        "Vila Mariana",
+        (-23.5891, -46.6346),
+        "Paulista",
+        (-23.5614, -46.6566),
+        duration_minutes=26,
+        region_name="Sao Paulo Metro",
+        description="Compact but meaningful corridor in Sao Paulo's dense urban core.",
+    ),
+    "Yaba to Marina": _line_route(
+        "Yaba to Marina",
+        "Yaba",
+        (6.5095, 3.3796),
+        "Marina",
+        (6.4541, 3.3947),
+        duration_minutes=33,
+        region_name="Lagos Metro",
+        description="Inland-to-waterfront Lagos commute with meaningful hour-to-hour changes.",
+    ),
+    "Queenstown to Marina Bay": _line_route(
+        "Queenstown to Marina Bay",
+        "Queenstown",
+        (1.2942, 103.7864),
+        "Marina Bay",
+        (1.2823, 103.8588),
+        duration_minutes=28,
+        region_name="Singapore",
+        description="Short Singapore commute that still benefits from route exposure timing.",
+    ),
+    "Newtown to Sydney CBD": _line_route(
+        "Newtown to Sydney CBD",
+        "Newtown",
+        (-33.8981, 151.1746),
+        "Sydney CBD",
+        (-33.8688, 151.2093),
+        duration_minutes=24,
+        region_name="Sydney Metro",
+        description="Inner-city Sydney route that shows the model works outside Europe and North America.",
+    ),
+    "Observatory to Foreshore": _line_route(
+        "Observatory to Foreshore",
+        "Observatory",
+        (-33.9370, 18.4655),
+        "Foreshore",
+        (-33.9157, 18.4291),
+        duration_minutes=22,
+        region_name="Cape Town Metro",
+        description="Cape Town commuter corridor useful for demonstrating a globally configurable route workflow.",
     ),
 }
+
+DEFAULT_REGION = REGION_PRESETS["Dublin Metro"]
+DEFAULT_LOCATIONS = {name: (location.lat, location.lon) for name, location in LOCATION_PRESETS.items()}
+DEFAULT_ROUTES = ROUTE_PRESETS
 
 
 def build_grid(config: RegionConfig = DEFAULT_REGION) -> tuple[np.ndarray, np.ndarray, list[tuple[float, float]]]:
@@ -97,6 +272,12 @@ def build_grid(config: RegionConfig = DEFAULT_REGION) -> tuple[np.ndarray, np.nd
 
 def _dataset_path(path: str | Path | None = None) -> Path:
     return Path(path).expanduser().resolve() if path else DEFAULT_DATA_PATH
+
+
+def _fetch_json(url: str, timeout: int = 90) -> dict | list:
+    request = Request(url, headers={"User-Agent": "AtmosLens/0.1"})
+    with urlopen(request, timeout=timeout) as response:
+        return json.load(response)
 
 
 def _normalise_dataset(ds: xr.Dataset) -> xr.Dataset:
@@ -111,21 +292,19 @@ def _normalise_dataset(ds: xr.Dataset) -> xr.Dataset:
     return ds
 
 
+def available_pollutants(ds: xr.Dataset) -> list[str]:
+    return [name for name in SUPPORTED_POLLUTANTS if name in ds.data_vars]
+
+
 def validate_dataset(ds: xr.Dataset) -> xr.Dataset:
     ds = _normalise_dataset(ds)
     required_dims = {"time", "lat", "lon"}
     missing_dims = required_dims.difference(ds.dims)
     if missing_dims:
         raise ValueError(f"Dataset missing expected dimensions: {sorted(missing_dims)}")
-
-    pollutants = available_pollutants(ds)
-    if not pollutants:
+    if not available_pollutants(ds):
         raise ValueError("Dataset does not expose any supported pollutant variables.")
     return ds
-
-
-def available_pollutants(ds: xr.Dataset) -> list[str]:
-    return [name for name in SUPPORTED_POLLUTANTS if name in ds.data_vars]
 
 
 def fetch_open_meteo_grid(
@@ -150,8 +329,7 @@ def fetch_open_meteo_grid(
         }
     )
 
-    with urlopen(f"{OPEN_METEO_AIR_QUALITY_URL}?{query}", timeout=timeout) as response:
-        payload = json.load(response)
+    payload = _fetch_json(f"{OPEN_METEO_AIR_QUALITY_URL}?{query}", timeout=timeout)
 
     records = payload if isinstance(payload, list) else [payload]
     if len(records) != len(points):
@@ -177,7 +355,6 @@ def fetch_open_meteo_grid(
                 [np.nan if value is None else float(value) for value in values],
                 dtype=float,
             )
-
         data_vars[pollutant] = (
             ("time", "lat", "lon"),
             cube,
@@ -188,7 +365,7 @@ def fetch_open_meteo_grid(
         data_vars=data_vars,
         coords={"time": times, "lat": latitudes, "lon": longitudes},
         attrs={
-            "title": "AtmosLens sample air-quality forecast",
+            "title": "AtmosLens air-quality forecast",
             "source": "Open-Meteo Air Quality API",
             "domain": config.domains,
             "region_name": config.name,
@@ -224,37 +401,169 @@ def load_dataset(
         return validate_dataset(xr.load_dataset(dataset_path))
     if allow_download:
         return fetch_open_meteo_grid(config=config, output_path=dataset_path)
-    raise FileNotFoundError(
-        f"Could not find {dataset_path}. Run `atmoslens-fetch --output {dataset_path}` first."
+    raise FileNotFoundError(f"Could not find {dataset_path}. Run `atmoslens-fetch --output {dataset_path}` first.")
+
+
+def dataset_bounds(ds: xr.Dataset) -> dict[str, float]:
+    valid = validate_dataset(ds)
+    return {
+        "lat_min": float(valid.lat.min()),
+        "lat_max": float(valid.lat.max()),
+        "lon_min": float(valid.lon.min()),
+        "lon_max": float(valid.lon.max()),
+    }
+
+
+def coordinates_in_bounds(ds: xr.Dataset, lat: float, lon: float) -> bool:
+    bounds = dataset_bounds(ds)
+    return bounds["lat_min"] <= lat <= bounds["lat_max"] and bounds["lon_min"] <= lon <= bounds["lon_max"]
+
+
+def assert_coordinates_in_bounds(ds: xr.Dataset, lat: float, lon: float, *, label: str) -> None:
+    if coordinates_in_bounds(ds, lat, lon):
+        return
+    bounds = dataset_bounds(ds)
+    raise ValueError(
+        f"{label} ({lat:.3f}, {lon:.3f}) is outside the current forecast cube. "
+        f"Current bounds are lat {bounds['lat_min']:.3f} to {bounds['lat_max']:.3f}, "
+        f"lon {bounds['lon_min']:.3f} to {bounds['lon_max']:.3f}. Refresh the region or edit the coordinates."
     )
 
 
-def location_series(ds: xr.Dataset, location_name: str, pollutant: str) -> pd.Series:
-    lat, lon = DEFAULT_LOCATIONS[location_name]
+def location_series(ds: xr.Dataset, lat: float, lon: float, pollutant: str) -> pd.Series:
+    assert_coordinates_in_bounds(ds, lat, lon, label="Selected location")
     da = ds[pollutant].interp(lat=lat, lon=lon)
-    series = pd.Series(da.values, index=pd.to_datetime(da["time"].values), name=pollutant)
-    return series.sort_index()
+    series = pd.Series(da.values, index=pd.to_datetime(da["time"].values), name=pollutant).sort_index()
+    if series.isna().all():
+        raise ValueError("No forecast values were available for the selected location.")
+    return series
 
 
 def map_frame(ds: xr.Dataset, pollutant: str, timestamp: pd.Timestamp) -> xr.DataArray:
     return ds[pollutant].sel(time=timestamp, method="nearest")
 
 
+def location_presets_for_region(region_name: str) -> list[str]:
+    return [name for name, location in LOCATION_PRESETS.items() if location.region_name == region_name]
+
+
+def route_presets_for_region(region_name: str) -> list[str]:
+    return [name for name, route in ROUTE_PRESETS.items() if route.region_name == region_name]
+
+
+def build_route_from_endpoints(
+    name: str,
+    start_label: str,
+    start: tuple[float, float],
+    end_label: str,
+    end: tuple[float, float],
+    *,
+    duration_minutes: int,
+    region_name: str = "",
+) -> RouteDefinition:
+    description = f"Custom route from {start_label} to {end_label} generated from user-provided endpoints."
+    return _line_route(
+        name,
+        start_label,
+        start,
+        end_label,
+        end,
+        duration_minutes=duration_minutes,
+        region_name=region_name,
+        description=description,
+    )
+
+
+def _search_display_name(result: dict[str, object]) -> str:
+    parts = [str(result.get("name", "")).strip()]
+    admin1 = str(result.get("admin1", "")).strip()
+    country = str(result.get("country", "")).strip()
+    for part in (admin1, country):
+        if part and part not in parts:
+            parts.append(part)
+    return ", ".join(part for part in parts if part)
+
+
+def _search_description(result: dict[str, object]) -> str:
+    parts = []
+    feature = str(result.get("feature_code", "")).strip()
+    timezone = str(result.get("timezone", "")).strip()
+    country_code = str(result.get("country_code", "")).strip()
+    if feature:
+        parts.append(feature)
+    if country_code:
+        parts.append(country_code)
+    if timezone:
+        parts.append(timezone)
+    return " | ".join(parts)
+
+
+def search_places(query: str, *, count: int = 6, language: str = "en", timeout: int = 30) -> list[LocationDefinition]:
+    clean_query = " ".join(query.split())
+    if len(clean_query) < 2:
+        raise ValueError("Type at least two characters before searching for a place.")
+
+    params = urlencode({"name": clean_query, "count": count, "language": language, "format": "json"})
+    payload = _fetch_json(f"{OPEN_METEO_GEOCODING_URL}?{params}", timeout=timeout)
+    results = payload.get("results", []) if isinstance(payload, dict) else []
+    if not results:
+        raise ValueError(f"No places matched '{clean_query}'. Try a city, district, or postcode.")
+
+    locations = []
+    for result in results:
+        lat = float(result["latitude"])
+        lon = float(result["longitude"])
+        timezone = str(result.get("timezone") or "auto")
+        locations.append(
+            LocationDefinition(
+                name=_search_display_name(result),
+                lat=lat,
+                lon=lon,
+                timezone=timezone,
+                region_name=str(result.get("country", "")).strip(),
+                description=_search_description(result),
+            )
+        )
+    return locations
+
+
+def location_label(location: LocationDefinition) -> str:
+    suffix = f" | {location.description}" if location.description else ""
+    return f"{location.name} | {location.lat:.3f}, {location.lon:.3f}{suffix}"
+
+
 def dataset_summary(ds: xr.Dataset) -> dict[str, object]:
     valid = validate_dataset(ds)
-    return {
+    summary = {
         "dims": {name: int(length) for name, length in valid.sizes.items()},
         "pollutants": available_pollutants(valid),
         "time_start": pd.Timestamp(valid.time.min().item()).isoformat(),
         "time_end": pd.Timestamp(valid.time.max().item()).isoformat(),
         "region_name": valid.attrs.get("region_name", ""),
         "source": valid.attrs.get("source", ""),
+        "timezone": valid.attrs.get("timezone", ""),
     }
+    summary.update(dataset_bounds(valid))
+    return summary
 
 
 def build_region_from_args(args: argparse.Namespace) -> RegionConfig:
+    if args.center_lat is not None and args.center_lon is not None:
+        return region_from_center(
+            args.name,
+            args.center_lat,
+            args.center_lon,
+            lat_span=args.lat_span,
+            lon_span=args.lon_span,
+            n_lat=args.n_lat if args.n_lat is not None else DEFAULT_REGION.n_lat,
+            n_lon=args.n_lon if args.n_lon is not None else DEFAULT_REGION.n_lon,
+            forecast_hours=args.forecast_hours,
+            timezone=args.timezone,
+            domains=args.domains,
+        )
     return replace(
         DEFAULT_REGION,
+        name=args.name,
         lat_min=args.lat_min if args.lat_min is not None else DEFAULT_REGION.lat_min,
         lat_max=args.lat_max if args.lat_max is not None else DEFAULT_REGION.lat_max,
         lon_min=args.lon_min if args.lon_min is not None else DEFAULT_REGION.lon_min,
@@ -270,6 +579,7 @@ def build_region_from_args(args: argparse.Namespace) -> RegionConfig:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Fetch a gridded Open-Meteo air-quality dataset for AtmosLens.")
     parser.add_argument("--output", default=str(DEFAULT_DATA_PATH))
+    parser.add_argument("--name", default=DEFAULT_REGION.name)
     parser.add_argument("--forecast-hours", type=int, default=DEFAULT_REGION.forecast_hours)
     parser.add_argument("--timezone", default=DEFAULT_REGION.timezone)
     parser.add_argument("--domains", default=DEFAULT_REGION.domains)
@@ -277,18 +587,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lat-max", type=float)
     parser.add_argument("--lon-min", type=float)
     parser.add_argument("--lon-max", type=float)
+    parser.add_argument("--center-lat", type=float)
+    parser.add_argument("--center-lon", type=float)
+    parser.add_argument("--lat-span", type=float, default=DEFAULT_REGION.lat_max - DEFAULT_REGION.lat_min)
+    parser.add_argument("--lon-span", type=float, default=DEFAULT_REGION.lon_max - DEFAULT_REGION.lon_min)
     parser.add_argument("--n-lat", type=int)
     parser.add_argument("--n-lon", type=int)
     args = parser.parse_args(argv)
 
     config = build_region_from_args(args)
     ds = fetch_open_meteo_grid(config=config, output_path=args.output)
-    summary = dataset_summary(ds)
-    print(json.dumps(summary, indent=2))
-    print(f"Wrote sample forecast to {Path(args.output).expanduser().resolve()}")
+    print(json.dumps(dataset_summary(ds), indent=2))
+    print(f"Wrote forecast cube to {Path(args.output).expanduser().resolve()}")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

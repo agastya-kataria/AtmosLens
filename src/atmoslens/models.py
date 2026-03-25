@@ -5,11 +5,24 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class LocationDefinition:
+    name: str
+    lat: float
+    lon: float
+    timezone: str = "auto"
+    region_name: str = ""
+    description: str = ""
+
+
+@dataclass(frozen=True)
 class RouteDefinition:
     name: str
     points: tuple[tuple[float, float], ...]
     duration_minutes: int = 45
     description: str = ""
+    start_label: str = ""
+    end_label: str = ""
+    region_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -31,12 +44,17 @@ class TransformStep:
 @dataclass(frozen=True)
 class AnalysisRequest:
     location_name: str
+    location_lat: float
+    location_lon: float
     profile_name: str
     activity_name: str
     pollutant: str
     advisor_mode: str
     time_horizon_hours: int = 24
     route_name: str | None = None
+    route_points: tuple[tuple[float, float], ...] = ()
+    route_duration_minutes: int = 45
+    dataset_region_name: str = ""
 
 
 @dataclass(frozen=True)

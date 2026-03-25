@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from atmoslens.datasets import assert_coordinates_in_bounds
 from atmoslens.models import RouteDefinition
 from atmoslens.scoring import classify_verdict, score_value
 
@@ -56,6 +57,8 @@ def route_exposure_profile(
     *,
     samples: int = 32,
 ) -> pd.DataFrame:
+    for lat, lon in route.points:
+        assert_coordinates_in_bounds(ds, lat, lon, label=f"Route point in {route.name}")
     latitudes, longitudes, fractions = interpolate_route(route, samples=samples)
     timestamps = departure_time + pd.to_timedelta(fractions * route.duration_minutes, unit="minute")
 
@@ -74,6 +77,10 @@ def route_exposure_profile(
             "concentration": values.values.astype(float),
         }
     )
+    if frame["concentration"].isna().any():
+        raise ValueError(
+            f"The sampled route '{route.name}' leaves the current forecast cube. Refresh the region or edit the route endpoints."
+        )
     return frame
 
 
@@ -119,4 +126,3 @@ def rank_route_departures(
         )
 
     return pd.DataFrame.from_records(records)
-

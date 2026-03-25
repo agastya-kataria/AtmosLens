@@ -9,6 +9,8 @@ def test_lumen_bridge_serializes_schema_and_transform_steps(sample_dataset):
     bridge = XarrayPipelineBridge(sample_dataset)
     request = AnalysisRequest(
         location_name="Docklands",
+        location_lat=53.3478,
+        location_lon=-6.2374,
         profile_name="Sensitive",
         activity_name="Run",
         pollutant="pm2_5",

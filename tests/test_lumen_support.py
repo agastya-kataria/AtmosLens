@@ -8,6 +8,8 @@ from atmoslens.recommendations import build_activity_result
 def test_lumen_support_builds_pipeline_over_activity_outputs(sample_dataset):
     request = AnalysisRequest(
         location_name="Docklands",
+        location_lat=53.3478,
+        location_lon=-6.2374,
         profile_name="Sensitive",
         activity_name="Run",
         pollutant="pm2_5",
