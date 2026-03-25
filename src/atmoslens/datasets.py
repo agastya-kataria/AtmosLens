@@ -999,6 +999,7 @@ def dataset_summary(ds: xr.Dataset) -> dict[str, object]:
         "time_end": pd.Timestamp(valid.time.max().item()).isoformat(),
         "region_name": valid.attrs.get("region_name", ""),
         "source": valid.attrs.get("source", ""),
+        "forecast_mode": valid.attrs.get("forecast_mode", "unknown"),
         "timezone": valid.attrs.get("timezone", ""),
     }
     summary.update(dataset_bounds(valid))

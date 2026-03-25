@@ -50,6 +50,7 @@ def build_pollution_map(
     timestamp: pd.Timestamp,
     *,
     location: LocationDefinition,
+    timezone_label: str,
     route: RouteDefinition | None = None,
 ):
     meta = pollutant_meta(pollutant)
@@ -70,7 +71,7 @@ def build_pollution_map(
         cmap=pollutant_cmap(pollutant),
         clim=clim,
         colorbar=True,
-        title=f"{meta['label']} map for {timestamp:%a %d %b %H:%M}",
+        title=f"{meta['label']} map for {timestamp:%a %d %b %H:%M} ({timezone_label})",
         clabel=f"{meta['label']} ({meta['unit']})",
         line_alpha=0,
         infer_projection=True,
@@ -148,33 +149,47 @@ def build_timeline_plot(
     pollutant: str,
     profile_name: str,
     activity_name: str,
+    timezone_label: str,
 ):
     meta = pollutant_meta(pollutant)
     thresholds = adjusted_thresholds(pollutant, profile_name, activity_name)
-    timeline = pd.DataFrame(result.timeline_records)
+    timeline = pd.DataFrame(result.timeline_records).sort_values("time").reset_index(drop=True)
     windows = pd.DataFrame(result.window_records)
     best = windows.sort_values("score", ascending=True).iloc[0]
+    timeline["step"] = np.arange(len(timeline))
+    tick_stride = max(1, len(timeline) // 8)
+    xticks = [(int(row.step), pd.Timestamp(row.time).strftime("%a %H:%M")) for row in timeline.iloc[::tick_stride].itertuples()]
+    last_tick = (int(timeline.iloc[-1]["step"]), pd.Timestamp(timeline.iloc[-1]["time"]).strftime("%a %H:%M"))
+    if last_tick not in xticks:
+        xticks.append(last_tick)
+    time_to_step = {pd.Timestamp(row.time): int(row.step) for row in timeline.itertuples()}
+    start_step = time_to_step[pd.Timestamp(best["start"])]
+    duration_hours = max(1, int(round((pd.Timestamp(best["end"]) - pd.Timestamp(best["start"])).total_seconds() / 3600.0)))
+    end_step = start_step + duration_hours - 1
 
     curve = timeline.hvplot.line(
-        x="time",
+        x="step",
         y="value",
         line_width=3,
         color="#0f766e",
         width=860,
         height=340,
         ylabel=f"{meta['label']} ({meta['unit']})",
-        xlabel="Forecast time",
+        xlabel=f"Forecast hour ({timezone_label})",
         title="Forecast and decision window",
     )
-    markers = timeline.hvplot.scatter(x="time", y="value", color="#0f766e", size=54, alpha=0.78)
+    markers = timeline.hvplot.scatter(x="step", y="value", color="#0f766e", size=54, alpha=0.78)
     good_band = hv.HSpan(0, thresholds["good"]).opts(fill_color="#d7f4df", fill_alpha=0.55)
     caution_band = hv.HSpan(thresholds["good"], thresholds["caution"]).opts(
         fill_color="#fde7b2", fill_alpha=0.35
     )
     top_value = max(float(timeline["value"].max()) * 1.1, float(thresholds["caution"]) * 1.2)
     avoid_band = hv.HSpan(thresholds["caution"], top_value).opts(fill_color="#f9c8c2", fill_alpha=0.25)
-    best_window = hv.VSpan(best["start"], best["end"]).opts(fill_color="#d97706", fill_alpha=0.12)
-    return (good_band * caution_band * avoid_band * best_window * curve * markers).opts(legend_position="top_left")
+    best_window = hv.VSpan(start_step - 0.45, end_step + 0.45).opts(fill_color="#d97706", fill_alpha=0.12)
+    return (good_band * caution_band * avoid_band * best_window * curve * markers).opts(
+        legend_position="top_left",
+        xticks=xticks,
+    )
 
 
 def build_route_plot(
@@ -182,14 +197,25 @@ def build_route_plot(
     pollutant: str,
     profile_name: str,
     activity_name: str,
+    timezone_label: str,
 ):
     meta = pollutant_meta(pollutant)
     thresholds = adjusted_thresholds(pollutant, profile_name, activity_name)
-    route_df = pd.DataFrame(result.route_records)
-    best = route_df.sort_values("score", ascending=True).iloc[0]
+    route_df = pd.DataFrame(result.route_records).sort_values("departure").reset_index(drop=True)
+    best_index = int(route_df["score"].astype(float).idxmin())
+    best = route_df.iloc[best_index]
+    route_df["step"] = np.arange(len(route_df))
+    tick_stride = max(1, len(route_df) // 8)
+    xticks = [
+        (int(row.step), pd.Timestamp(row.departure).strftime("%a %H:%M"))
+        for row in route_df.iloc[::tick_stride].itertuples()
+    ]
+    last_tick = (int(route_df.iloc[-1]["step"]), pd.Timestamp(route_df.iloc[-1]["departure"]).strftime("%a %H:%M"))
+    if last_tick not in xticks:
+        xticks.append(last_tick)
 
     line = route_df.hvplot.step(
-        x="departure",
+        x="step",
         y="mean_value",
         where="mid",
         line_width=3,
@@ -197,18 +223,21 @@ def build_route_plot(
         width=860,
         height=340,
         ylabel=f"Mean {meta['label']} ({meta['unit']})",
-        xlabel="Departure time",
+        xlabel=f"Departure hour ({timezone_label})",
         title="Departure-time route exposure",
     )
-    points = route_df.hvplot.scatter(x="departure", y="mean_value", color="#0f172a", size=60, alpha=0.8)
+    points = route_df.hvplot.scatter(x="step", y="mean_value", color="#0f172a", size=60, alpha=0.8)
     good_band = hv.HSpan(0, thresholds["good"]).opts(fill_color="#d7f4df", fill_alpha=0.55)
     caution_band = hv.HSpan(thresholds["good"], thresholds["caution"]).opts(
         fill_color="#fde7b2", fill_alpha=0.35
     )
     upper = max(float(route_df["mean_value"].max()) * 1.15, float(thresholds["caution"]) * 1.2)
     avoid_band = hv.HSpan(thresholds["caution"], upper).opts(fill_color="#f9c8c2", fill_alpha=0.25)
-    best_window = hv.VSpan(best["departure"], best["arrival"]).opts(fill_color="#0f766e", fill_alpha=0.12)
-    return (good_band * caution_band * avoid_band * best_window * line * points).opts(legend_position="top_left")
+    best_window = hv.VSpan(best_index - 0.45, best_index + 0.45).opts(fill_color="#0f766e", fill_alpha=0.12)
+    return (good_band * caution_band * avoid_band * best_window * line * points).opts(
+        legend_position="top_left",
+        xticks=xticks,
+    )
 
 
 def build_scenario_matrix_plot(matrix: pd.DataFrame):

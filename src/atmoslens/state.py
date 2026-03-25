@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 import math
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pandas as pd
 import param
@@ -378,6 +379,23 @@ class AtmosLensState(param.Parameterized):
     def current_timestamp(self) -> pd.Timestamp:
         return self.available_times[self.map_hour_index]
 
+    def localize_timestamp(self, timestamp: pd.Timestamp) -> pd.Timestamp:
+        value = pd.Timestamp(timestamp)
+        if value.tzinfo is not None:
+            return value.tz_convert(self.forecast_timezone or "UTC")
+        try:
+            timezone = ZoneInfo(self.forecast_timezone or "UTC")
+        except ZoneInfoNotFoundError:
+            timezone = ZoneInfo("UTC")
+        return value.tz_localize(timezone)
+
+    def current_local_time(self) -> pd.Timestamp:
+        try:
+            timezone = ZoneInfo(self.forecast_timezone or "UTC")
+        except ZoneInfoNotFoundError:
+            timezone = ZoneInfo("UTC")
+        return pd.Timestamp.now(tz=timezone)
+
     def current_map_frame(self):
         return map_frame(self.dataset, self.pollutant, self.current_timestamp())
 
@@ -435,16 +453,14 @@ class AtmosLensState(param.Parameterized):
             "lon_span": round(lon_span, 4),
         }
 
-    def _message_for_config(self, config) -> str:
-        return (
-            f"Loaded live forecast cube for {config.name} centred on "
-            f"{config.lat_min + (config.lat_max - config.lat_min) / 2:.2f}, "
-            f"{config.lon_min + (config.lon_max - config.lon_min) / 2:.2f}."
-        )
-
     def _fetch_dataset_for_config(self, config):
         ds = fetch_open_meteo_grid(config=config, output_path=self.live_dataset_path)
-        return ds, self._message_for_config(config)
+        return (
+            ds,
+            f"Loaded live forecast cube for {config.name} centred on "
+            f"{config.lat_min + (config.lat_max - config.lat_min) / 2:.2f}, "
+            f"{config.lon_min + (config.lon_max - config.lon_min) / 2:.2f}.",
+        )
 
     def _location_result_config(self, location: LocationDefinition):
         region = self._region_settings_for_points([(location.lat, location.lon)], label=f"{location.name} search region")

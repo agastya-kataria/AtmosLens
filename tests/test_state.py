@@ -109,3 +109,16 @@ def test_operational_status_separates_selection_shift_from_commute_length(sample
 
     assert status["selection_shift_km"] > 6000
     assert status["route_distance_km"] < 20
+
+
+def test_current_local_time_uses_selected_timezone(sample_dataset):
+    state = AtmosLensState(dataset=sample_dataset)
+    state.forecast_timezone = "Asia/Kolkata"
+
+    now = state.current_local_time()
+    localized = state.localize_timestamp("2026-03-25 00:00:00")
+
+    assert now.tzinfo is not None
+    assert str(now.tzinfo) == "Asia/Kolkata"
+    assert localized.hour == 0
+    assert str(localized.tzinfo) == "Asia/Kolkata"

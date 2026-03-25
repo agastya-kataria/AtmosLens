@@ -91,6 +91,13 @@ def _hero_html(title: str, body: str) -> str:
     """
 
 
+def _workaround_html() -> str:
+    return (
+        "Workaround: wait 5-10 seconds and try again, or open `Professional Controls`, "
+        "set a smaller grid like `7 x 9`, then click `Refresh Forecast Cube`."
+    )
+
+
 def _error_panel(title: str, message: str):
     return pn.pane.Alert(
         f"**{title}**\n\n{message}",
@@ -117,7 +124,8 @@ def _state_error_panel(title: str, state: AtmosLensState, message: str):
             (
                 f"**{title}**\n\n"
                 f"The selection has moved to **{op['target_region']}**, but the loaded cube is still **{op['loaded_region']}**. "
-                f"AtmosLens needs to refresh the xarray forecast cube for the new area before it can score this view."
+                f"AtmosLens needs to refresh the xarray forecast cube for the new area before it can score this view.\n\n"
+                f"{_workaround_html()}"
             ),
             alert_type="warning",
             sizing_mode="stretch_width",
@@ -127,7 +135,8 @@ def _state_error_panel(title: str, state: AtmosLensState, message: str):
             (
                 f"**{title}**\n\n"
                 f"The loaded cube already matches **{op['loaded_region']}**, but the decision point is outside its bounds. "
-                f"Search again, edit the point, or refresh a forecast cube centered on the selected place."
+                f"Search again, edit the point, or refresh a forecast cube centered on the selected place.\n\n"
+                f"{_workaround_html()}"
             ),
             alert_type="warning",
             sizing_mode="stretch_width",
@@ -174,11 +183,14 @@ def render_recommendation_card(state: AtmosLensState):
 
     verdict_colors = {"Good": "#0f766e", "Caution": "#d97706", "Avoid": "#dc2626"}
     meta = pollutant_meta(state.pollutant)
+    forecast_timestamp = state.localize_timestamp(state.current_timestamp())
     body = (
         f"<div style='display:inline-block; margin-bottom:0.5rem; padding:0.25rem 0.65rem; "
         f"border-radius:999px; background:{verdict_colors[result.recommendation.verdict]}; color:white; "
         f"font-weight:700;'>{result.recommendation.verdict}</div>"
         f"<p style='margin:0 0 0.75rem 0;'>{result.recommendation.explanation}</p>"
+        f"<div><strong>Local time now:</strong> {state.current_local_time():%a %d %b %H:%M} ({state.forecast_timezone})</div>"
+        f"<div><strong>Current forecast hour:</strong> {forecast_timestamp:%a %d %b %H:%M} ({state.forecast_timezone})</div>"
         f"<div><strong>Lens:</strong> {state.profile} · {state.activity} · {pollutant_meta(state.pollutant)['label']} · {state.horizon_hours}h horizon</div>"
         f"<div><strong>Decision point:</strong> {state.location_name} ({state.location_lat:.3f}, {state.location_lon:.3f})</div>"
         f"<div><strong>Best window:</strong> {result.recommendation.best_window_label}</div>"
@@ -197,7 +209,7 @@ def render_recommendation_card(state: AtmosLensState):
 
 
 def render_snapshot_cards(state: AtmosLensState):
-    timestamp = state.current_timestamp()
+    timestamp = state.localize_timestamp(state.current_timestamp())
     cards = []
     op = state.operational_status()
 
@@ -207,7 +219,7 @@ def render_snapshot_cards(state: AtmosLensState):
         cards.append(
             pn.pane.HTML(
                 _card_html(
-                    f"{state.location_name} at {timestamp:%H:%M}",
+                    f"{state.location_name} at {timestamp:%H:%M} local",
                     f"<strong>{_format_value(activity.recommendation.current_value)} {meta['unit']}</strong> projected {meta['label']}.",
                     accent="#0f766e",
                     eyebrow="Map Snapshot",
@@ -269,8 +281,9 @@ def render_map_panel(state: AtmosLensState):
         plot = build_pollution_map(
             frame,
             state.pollutant,
-            state.current_timestamp(),
+            state.localize_timestamp(state.current_timestamp()),
             location=state.current_location(),
+            timezone_label=state.forecast_timezone,
             route=state.current_route() if op["route_ready"] and op["route_commute_ready"] else None,
         )
         meta = pollutant_meta(state.pollutant)
@@ -280,6 +293,7 @@ def render_map_panel(state: AtmosLensState):
             (
                 f"**Spatial view.** GeoViews + HoloViews render the xarray slice directly over Carto tiles with a green-to-red risk ramp, "
                 f"and AtmosLens only overlays the commute corridor when the route is valid for the active cube. Current cube: `{state.summary()['region_name']}`. "
+                f"The selected map hour is shown in local time for `{state.forecast_timezone}`. "
                 f"Current map slice ranges from `{_format_value(slice_min)}` to `{_format_value(slice_max)}` {meta['unit']}, "
                 f"with the color scale clipped to the 5th-95th percentile so global maps stay readable."
             ),
@@ -293,11 +307,12 @@ def render_map_panel(state: AtmosLensState):
 def render_timeline_panel(state: AtmosLensState):
     try:
         result = state.activity_result()
-        plot = build_timeline_plot(result, state.pollutant, state.profile, state.activity)
+        plot = build_timeline_plot(result, state.pollutant, state.profile, state.activity, state.forecast_timezone)
         note = pn.pane.Markdown(
             (
                 f"**Temporal view.** HoloViews overlays the forecast curve, threshold bands, and "
-                f"the best `{state.activity}` window across the selected `{state.horizon_hours}`-hour horizon."
+                f"the best `{state.activity}` window across the selected `{state.horizon_hours}`-hour horizon. "
+                f"All forecast hours are shown in local time for `{state.forecast_timezone}`."
             ),
             css_classes=["atmoslens-note"],
         )
@@ -309,11 +324,12 @@ def render_timeline_panel(state: AtmosLensState):
 def render_commute_panel(state: AtmosLensState):
     try:
         result = state.route_result()
-        plot = build_route_plot(result, state.pollutant, state.profile, "Cycle Commute")
+        plot = build_route_plot(result, state.pollutant, state.profile, "Cycle Commute", state.forecast_timezone)
         note = pn.pane.Markdown(
             (
                 f"**Route feature.** AtmosLens samples `{state.route_name}` from "
-                f"`{state.route_start_name}` to `{state.route_end_name}` against the gridded forecast and ranks each departure hour."
+                f"`{state.route_start_name}` to `{state.route_end_name}` against the gridded forecast and ranks each departure hour in "
+                f"`{state.forecast_timezone}` local time."
             ),
             css_classes=["atmoslens-note"],
         )
@@ -413,12 +429,17 @@ def render_bridge_panel(state: AtmosLensState):
 def _summary_pane(state: AtmosLensState):
     summary = state.summary()
     status_text = state.busy_message if state.busy and state.busy_message else state.status_message
+    mode_line = ""
+    if summary.get("forecast_mode") == "live_grid":
+        mode_line = "- Mode: `Live gridded forecast`\n"
     return pn.pane.Markdown(
         (
             f"**Loaded cube**\n\n"
             f"- Region: `{summary['region_name']}`\n"
             f"- Target search region: `{state.region_name}`\n"
-            f"- Times: `{summary['time_start']}` to `{summary['time_end']}`\n"
+            f"{mode_line}"
+            f"- Times (local): `{summary['time_start']}` to `{summary['time_end']}`\n"
+            f"- Forecast timezone: `{summary['timezone'] or state.forecast_timezone}`\n"
             f"- Bounds: lat `{summary['lat_min']:.3f}` to `{summary['lat_max']:.3f}`, "
             f"lon `{summary['lon_min']:.3f}` to `{summary['lon_max']:.3f}`\n"
             f"- Grid: `{summary['dims']['time']} x {summary['dims']['lat']} x {summary['dims']['lon']}`\n"
@@ -437,6 +458,20 @@ def _run_with_busy(state: AtmosLensState, message: str, callback):
         state.clear_busy()
 
 
+def _local_time_pane(state: AtmosLensState):
+    pane = pn.pane.Markdown("", css_classes=["atmoslens-note"])
+
+    def _update() -> None:
+        now = state.current_local_time()
+        pane.object = f"**Local time now**\n\n`{now:%a %d %b %H:%M}` in `{state.forecast_timezone}`"
+
+    _update()
+    state.param.watch(lambda *_: _update(), "forecast_timezone")
+    if pn.state.curdoc is not None:
+        pn.state.add_periodic_callback(_update, period=30000)
+    return pane
+
+
 def build_sidebar(state: AtmosLensState):
     refresh_button = pn.widgets.Button(
         name="Refresh Forecast Cube",
@@ -451,7 +486,7 @@ def build_sidebar(state: AtmosLensState):
             _run_with_busy(state, "Refreshing the forecast cube for the active analysis region...", state.refresh_dataset)
             _notify("success", state.status_message)
         except Exception as exc:  # noqa: BLE001
-            state.status_message = f"Refresh failed: {exc}"
+            state.status_message = f"Refresh failed: {exc} {_workaround_html()}"
             _notify("error", state.status_message)
 
     refresh_button.on_click(_refresh)
@@ -476,6 +511,7 @@ def build_sidebar(state: AtmosLensState):
                 (
                     f"<strong>Target region:</strong> {state.region_name}<br>"
                     f"<strong>Loaded cube:</strong> {state.summary()['region_name']}<br>"
+                    f"<strong>Local time:</strong> {state.current_local_time():%a %d %b %H:%M} ({state.forecast_timezone})<br>"
                     f"Type any city, district, or postcode and press <strong>Enter</strong> to refresh the analysis."
                 ),
             )
@@ -486,6 +522,7 @@ def build_sidebar(state: AtmosLensState):
         state.param.region_name,
         state.param.dataset_revision,
         state.param.busy,
+        state.param.forecast_timezone,
     )
 
     location_search = pn.widgets.TextInput(
@@ -510,7 +547,7 @@ def build_sidebar(state: AtmosLensState):
         except Exception as exc:  # noqa: BLE001
             location_select_guard["active"] = False
             _set_match_widget(location_matches, [])
-            location_search_note.object = f"**Search error**\n\n{exc}"
+            location_search_note.object = f"**Search error**\n\n{exc}\n\n{_workaround_html()}"
             state.status_message = f"Search failed: {exc}"
             _notify("error", str(exc))
             return
@@ -533,7 +570,7 @@ def build_sidebar(state: AtmosLensState):
         except Exception as exc:  # noqa: BLE001
             location_select_guard["active"] = False
             location_search_note.object = (
-                f"**Search paused**\n\n{exc}\n\nAtmosLens kept the current loaded forecast cube and did not switch the active analysis."
+                f"**Search paused**\n\n{exc}\n\nAtmosLens kept the current loaded forecast cube and did not switch the active analysis.\n\n{_workaround_html()}"
             )
             state.status_message = f"Search paused: {exc}"
             _notify("warning", str(exc))
@@ -559,7 +596,7 @@ def build_sidebar(state: AtmosLensState):
             _notify("success", f"Loaded a live forecast cube for {state.location_name}.")
         except Exception as exc:  # noqa: BLE001
             location_search_note.object = (
-                f"**Selection paused**\n\n{exc}\n\nAtmosLens kept the current loaded forecast cube and left the active analysis unchanged."
+                f"**Selection paused**\n\n{exc}\n\nAtmosLens kept the current loaded forecast cube and left the active analysis unchanged.\n\n{_workaround_html()}"
             )
             state.status_message = f"Selection paused: {exc}"
             _notify("warning", str(exc))
@@ -640,7 +677,7 @@ def build_sidebar(state: AtmosLensState):
         except Exception as exc:  # noqa: BLE001
             route_end_select_guard["active"] = False
             _set_match_widget(route_end_matches, [])
-            route_end_note.object = f"**End search error**\n\n{exc}"
+            route_end_note.object = f"**End search error**\n\n{exc}\n\n{_workaround_html()}"
             state.status_message = f"Route end search failed: {exc}"
             _notify("error", str(exc))
             return
@@ -663,7 +700,7 @@ def build_sidebar(state: AtmosLensState):
         except Exception as exc:  # noqa: BLE001
             route_end_select_guard["active"] = False
             route_end_note.object = (
-                f"**End search paused**\n\n{exc}\n\nAtmosLens kept the current loaded forecast cube and left the active route unchanged."
+                f"**End search paused**\n\n{exc}\n\nAtmosLens kept the current loaded forecast cube and left the active route unchanged.\n\n{_workaround_html()}"
             )
             state.status_message = f"Route end search paused: {exc}"
             _notify("warning", str(exc))
@@ -688,7 +725,7 @@ def build_sidebar(state: AtmosLensState):
             _notify("success", f"Loaded a route corridor forecast for {state.route_name}.")
         except Exception as exc:  # noqa: BLE001
             route_end_note.object = (
-                f"**End selection paused**\n\n{exc}\n\nAtmosLens kept the current loaded forecast cube and left the active route unchanged."
+                f"**End selection paused**\n\n{exc}\n\nAtmosLens kept the current loaded forecast cube and left the active route unchanged.\n\n{_workaround_html()}"
             )
             state.status_message = f"Route end selection paused: {exc}"
             _notify("warning", str(exc))
@@ -717,7 +754,7 @@ def build_sidebar(state: AtmosLensState):
             _run_with_busy(state, "Refreshing the forecast cube for the active commute corridor...", state.refresh_dataset)
             _notify("success", f"Loaded a route corridor forecast for {state.route_name}.")
         except Exception as exc:  # noqa: BLE001
-            state.status_message = f"Route corridor refresh failed: {exc}"
+            state.status_message = f"Route corridor refresh failed: {exc} {_workaround_html()}"
             _notify("error", str(exc))
 
     route_refresh_button.on_click(_refresh_route)
@@ -808,6 +845,7 @@ def build_sidebar(state: AtmosLensState):
 
     return pn.Column(
         hero,
+        _local_time_pane(state),
         pn.Card(
             pn.Column(
                 pn.Row(location_search, location_search_button),
