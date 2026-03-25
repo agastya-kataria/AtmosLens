@@ -89,9 +89,10 @@ def build_activity_result(ds, request: AnalysisRequest) -> AnalysisResult:
     best_score = float(best["score"])
     guidance = health_guidance(best_score, request.activity_name, pollutant_label=str(pollutant["label"]))
     who_note = who_guideline_note(request.pollutant)
+    current_val = round(float(current["value"]), 1)
     explanation = (
         f"{request.profile_name} thresholds rate the current {pollutant['label']} forecast at "
-        f"{current['value']:.1f} {pollutant['unit']} at {request.location_name}, while the cleanest {activity.label.lower()} window "
+        f"{current_val} {pollutant['unit']} at {request.location_name}, while the cleanest {activity.label.lower()} window "
         f"falls at {best['label']} with a blended score of {best_score:.0f}/100 ({score_interpretation(best_score)}). "
         f"{improvement_phrase(float(current['score']), best_score)} "
         f"{guidance}"
@@ -101,8 +102,8 @@ def build_activity_result(ds, request: AnalysisRequest) -> AnalysisResult:
         headline=f"Best time for {activity.label.lower()}: {best['label']}",
         explanation=explanation,
         best_window_label=str(best["label"]),
-        score=best_score,
-        current_value=float(current["value"]),
+        score=round(best_score, 1),
+        current_value=current_val,
         unit=str(pollutant["unit"]),
         who_guideline=who_note,
         score_label=score_interpretation(best_score),
@@ -156,7 +157,8 @@ def build_route_result(ds, request: AnalysisRequest) -> AnalysisResult:
     )
     best = departures.sort_values("score", ascending=True).iloc[0]
     pollutant = pollutant_meta(request.pollutant)
-    route_best_score = float(best["score"])
+    route_best_score = round(float(best["score"]), 1)
+    route_mean = round(float(best["mean_value"]), 1)
     route_guidance = health_guidance(route_best_score, "Cycle Commute", pollutant_label=str(pollutant["label"]))
     recommendation = Recommendation(
         verdict=str(best["verdict"]),
@@ -168,7 +170,7 @@ def build_route_result(ds, request: AnalysisRequest) -> AnalysisResult:
         ),
         best_window_label=f"{best['departure']:%H:%M}–{best['arrival']:%H:%M}",
         score=route_best_score,
-        current_value=float(best["mean_value"]),
+        current_value=route_mean,
         unit=str(pollutant["unit"]),
         who_guideline=who_guideline_note(request.pollutant),
         score_label=score_interpretation(route_best_score),

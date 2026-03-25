@@ -33,6 +33,26 @@ The strategic purpose is explicit: AtmosLens is the first vertical slice and pub
 
 The preview above uses the real Dublin sample cube with `Ozone` selected because it produces a more legible risk gradient than PM2.5 on the fetched March 25 forecast.
 
+## Data resilience
+
+AtmosLens uses a three-tier fallback chain for forecast data:
+
+1. **Live gridded forecast** — full Open-Meteo Air Quality API grid for the configured region
+2. **Point-to-grid fallback** — single-point forecast expanded to a synthetic local grid (when the grid API is rate-limited)
+3. **Bundled template fallback** — bundled Dublin sample cube re-projected to the target region (when the API is completely unavailable)
+
+This means the app never crashes on a failed fetch. It always loads something usable and tells the user what happened.
+
+## Health guidance and WHO references
+
+Every recommendation includes:
+
+- **Health guidance** — plain-language advice calibrated to the decision score (e.g., "Air quality is excellent for run. No precautions needed.")
+- **WHO guideline reference** — the relevant WHO air-quality guideline value for context (e.g., "WHO guideline: 100 µg/m³ (8-hour mean)")
+- **Score interpretation** — human-readable label mapping the 0–100 score to severity (Excellent / Good / Moderate / Unhealthy for sensitive groups / Unhealthy / Hazardous)
+- **7 activity types** — Run, Walk, Ventilate, Cycle Commute, Outdoor Dining, Children's Play, Dog Walk — each with distinct exertion multipliers and window durations
+- **4 health profiles** — General, Sensitive, Asthma, Outdoor Worker — each with distinct threshold multipliers
+
 ## HoloViz stack used explicitly
 
 - `Panel` for the application shell, widgets, cards, and layout
@@ -138,8 +158,9 @@ The fetch path intentionally builds a small regular grid around a real metro reg
 
 Current local status:
 
-- `15 passed` on Python `3.12.12`
+- `21 passed` on Python `3.12.12`
 - app object verified by importing `build_app()` and constructing the `FastListTemplate`
+- end-to-end smoke test passes: search, fetch, activity, route, matrix, bridge, lumen pipelines, map frame
 
 ## Demo framing for HoloViz / GSoC
 

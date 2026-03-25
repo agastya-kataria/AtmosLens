@@ -55,30 +55,34 @@ def build_pollution_map(
 ):
     meta = pollutant_meta(pollutant)
     clim = _color_limits(frame)
+    lons = np.asarray(frame["lon"].values, dtype=float)
+    lats = np.asarray(frame["lat"].values, dtype=float)
     mesh = gv.QuadMesh(
-        (
-            np.asarray(frame["lon"].values, dtype=float),
-            np.asarray(frame["lat"].values, dtype=float),
-            np.asarray(frame.values, dtype=float),
-        ),
+        (lons, lats, np.asarray(frame.values, dtype=float)),
         kdims=["Longitude", "Latitude"],
         vdims=[meta["label"]],
         crs=ccrs.PlateCarree(),
     ).opts(
-        frame_width=840,
-        frame_height=500,
-        alpha=0.65,
+        width=860,
+        height=520,
+        responsive=False,
+        alpha=0.72,
         cmap=pollutant_cmap(pollutant),
         clim=clim,
         colorbar=True,
         title=f"{meta['label']} — {timestamp:%a %d %b %H:%M} ({timezone_label})",
         clabel=f"{meta['label']} ({meta['unit']})",
         line_alpha=0,
-        infer_projection=True,
         projection=ccrs.GOOGLE_MERCATOR,
         tools=["hover"],
     )
-    tiles = gv.tile_sources.CartoLight.opts(alpha=0.85)
+    lon_pad = max(0.05, (float(lons.max()) - float(lons.min())) * 0.15)
+    lat_pad = max(0.05, (float(lats.max()) - float(lats.min())) * 0.15)
+    tiles = gv.tile_sources.CartoLight.opts(
+        alpha=0.88,
+        xlim=(float(lons.min()) - lon_pad, float(lons.max()) + lon_pad),
+        ylim=(float(lats.min()) - lat_pad, float(lats.max()) + lat_pad),
+    )
 
     active_location = pd.DataFrame(
         [{"name": location.name, "lat": location.lat, "lon": location.lon, "kind": "Decision point"}]
@@ -139,8 +143,6 @@ def build_pollution_map(
         toolbar="right",
         active_tools=["wheel_zoom"],
         show_legend=False,
-        infer_projection=True,
-        projection=ccrs.GOOGLE_MERCATOR,
     )
 
 
@@ -172,8 +174,9 @@ def build_timeline_plot(
         y="value",
         line_width=3,
         color="#0f766e",
-        frame_width=840,
-        frame_height=320,
+        width=860,
+        height=340,
+        responsive=False,
         ylabel=f"{meta['label']} ({meta['unit']})",
         xlabel=f"Forecast hour ({timezone_label})",
         title=f"{meta['label']} forecast — best {activity_name.lower()} window highlighted",
@@ -224,8 +227,9 @@ def build_route_plot(
         where="mid",
         line_width=3,
         color="#0f172a",
-        frame_width=840,
-        frame_height=320,
+        width=860,
+        height=340,
+        responsive=False,
         ylabel=f"Mean {meta['label']} ({meta['unit']})",
         xlabel=f"Departure hour ({timezone_label})",
         title=f"Route exposure by departure time — best departure highlighted",
@@ -250,8 +254,9 @@ def build_scenario_matrix_plot(matrix: pd.DataFrame):
         kdims=["activity", "profile"],
         vdims=["score", "verdict", "best_window", "headline"],
     ).opts(
-        frame_width=620,
-        frame_height=300,
+        width=640,
+        height=320,
+        responsive=False,
         cmap=cc.CET_L17,
         clim=(0, 100),
         colorbar=True,

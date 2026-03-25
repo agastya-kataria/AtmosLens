@@ -33,6 +33,7 @@ from atmoslens.datasets import (
     build_route_from_endpoints,
     coordinates_in_bounds,
     dataset_summary,
+    fetch_resilient_forecast,
     load_dataset,
     location_label,
     location_presets_for_region,
@@ -40,7 +41,6 @@ from atmoslens.datasets import (
     region_from_center,
     route_presets_for_region,
     search_places,
-    fetch_open_meteo_grid,
 )
 from atmoslens.lumen_bridge import XarrayPipelineBridge
 from atmoslens.models import AnalysisRequest, LocationDefinition
@@ -454,17 +454,11 @@ class AtmosLensState(param.Parameterized):
         }
 
     def _fetch_dataset_for_config(self, config):
-        ds = fetch_open_meteo_grid(config=config, output_path=self.live_dataset_path)
-        return (
-            ds,
-            f"Loaded live forecast cube for {config.name} centred on "
-            f"{config.lat_min + (config.lat_max - config.lat_min) / 2:.2f}, "
-            f"{config.lon_min + (config.lon_max - config.lon_min) / 2:.2f}.",
-        )
+        return fetch_resilient_forecast(config=config, output_path=self.live_dataset_path)
 
     def _location_result_config(self, location: LocationDefinition):
         region = self._region_settings_for_points([(location.lat, location.lon)], label=f"{location.name} search region")
-        timezone = location.timezone if location.timezone and location.timezone != "auto" else (self.forecast_timezone or "auto")
+        timezone = self._best_timezone_from_search_results(self._location_search_results, location)
         return region_from_center(
             str(region["label"]),
             float(region["center_lat"]),
@@ -485,17 +479,18 @@ class AtmosLensState(param.Parameterized):
             location.lat,
             location.lon,
         )
-        if distance_km > MAX_COMMUTE_DISTANCE_KM:
-            raise ValueError(
-                f"The selected destination would create a route of about {distance_km:.0f} km, which is too large for the commute advisor. "
-                f"Choose a destination within roughly {MAX_COMMUTE_DISTANCE_KM:.0f} km."
-            )
         route_name = f"{self.route_start_name} to {location.name}"
-        region = self._region_settings_for_points(
-            [(self.route_start_lat, self.route_start_lon), (location.lat, location.lon)],
-            label=f"{route_name} corridor",
-        )
-        timezone = location.timezone if location.timezone and location.timezone != "auto" else (self.forecast_timezone or "auto")
+        if distance_km > MAX_COMMUTE_DISTANCE_KM:
+            region = self._region_settings_for_points(
+                [(location.lat, location.lon)],
+                label=f"{location.name} search region",
+            )
+        else:
+            region = self._region_settings_for_points(
+                [(self.route_start_lat, self.route_start_lon), (location.lat, location.lon)],
+                label=f"{route_name} corridor",
+            )
+        timezone = self._best_timezone_from_search_results(self._route_end_search_results, location)
         return region_from_center(
             str(region["label"]),
             float(region["center_lat"]),
@@ -594,8 +589,23 @@ class AtmosLensState(param.Parameterized):
         self.load_route_end_search_result(0)
         return labels
 
+    def _best_timezone_from_search_results(self, results: list[LocationDefinition], primary: LocationDefinition) -> str:
+        """Pick the best timezone: prefer the primary result, then scan others, then fall back to matched region preset."""
+        if primary.timezone and primary.timezone != "auto":
+            return primary.timezone
+        for result in results:
+            if result.timezone and result.timezone != "auto":
+                return result.timezone
+        matched_preset = self._matching_region_preset(primary.lat, primary.lon)
+        if matched_preset and matched_preset in REGION_PRESETS:
+            tz = REGION_PRESETS[matched_preset].timezone
+            if tz and tz != "auto":
+                return tz
+        return self.forecast_timezone or "UTC"
+
     def apply_location_search_result(self, index: int) -> None:
         location = self._location_search_results[index]
+        timezone = self._best_timezone_from_search_results(self._location_search_results, location)
         previous_location_flag = self._ignore_location_sync_watch
         previous_region_flag = self._ignore_region_geometry_watch
         self._ignore_location_sync_watch = True
@@ -605,8 +615,7 @@ class AtmosLensState(param.Parameterized):
             self.location_lat = location.lat
             self.location_lon = location.lon
             self.forecast_domain = "auto"
-            if location.timezone and location.timezone != "auto":
-                self.forecast_timezone = location.timezone
+            self.forecast_timezone = timezone
             self.fit_region_to_points([(location.lat, location.lon)], label=f"{location.name} search region")
             self._seed_route_from_location()
         finally:
@@ -627,20 +636,33 @@ class AtmosLensState(param.Parameterized):
 
     def apply_route_start_search_result(self, index: int) -> None:
         location = self._route_start_search_results[index]
+        old_end_distance = self._distance_km(location.lat, location.lon, self.route_end_lat, self.route_end_lon)
         previous_route_flag = self._ignore_route_sync_watch
         self._ignore_route_sync_watch = True
         try:
             self.route_start_name = location.name
             self.route_start_lat = location.lat
             self.route_start_lon = location.lon
+            if old_end_distance > MAX_COMMUTE_DISTANCE_KM:
+                lat_offset = max(0.045, min(0.11, self.region_lat_span * 0.18))
+                lon_offset = max(0.06, min(0.14, self.region_lon_span * 0.18))
+                self.route_end_name = f"Near {location.name}"
+                self.route_end_lat = round(location.lat + lat_offset, 4)
+                self.route_end_lon = round(location.lon + lon_offset, 4)
             self._refresh_route_name()
         finally:
             self._ignore_route_sync_watch = previous_route_flag
         self._autofit_region_from_route(focus="start", timezone_hint=location.timezone)
         self._set_region_preset_display(location.lat, location.lon)
-        self.status_message = (
-            f"Resolved route start as {location.name}. Region was focused on the start side of the current route."
-        )
+        if old_end_distance > MAX_COMMUTE_DISTANCE_KM:
+            self.status_message = (
+                f"Resolved route start as {location.name}. The previous route end was too far away ({old_end_distance:.0f} km), "
+                f"so it was reset to a local seed. Search a new destination next."
+            )
+        else:
+            self.status_message = (
+                f"Resolved route start as {location.name}. Search the destination next."
+            )
 
     def apply_route_end_search_result(self, index: int) -> None:
         location = self._route_end_search_results[index]
@@ -663,9 +685,22 @@ class AtmosLensState(param.Parameterized):
 
     def load_route_end_search_result(self, index: int) -> None:
         location = self._route_end_search_results[index]
+        distance_km = self._distance_km(self.route_start_lat, self.route_start_lon, location.lat, location.lon)
         config = self._route_end_result_config(location)
         ds, message = self._fetch_dataset_for_config(config)
         self.apply_route_end_search_result(index)
+        if distance_km > MAX_COMMUTE_DISTANCE_KM:
+            self._ignore_location_sync_watch = True
+            try:
+                self.location_name = location.name
+                self.location_lat = location.lat
+                self.location_lon = location.lon
+            finally:
+                self._ignore_location_sync_watch = False
+            message += (
+                f" The route spans {distance_km:.0f} km which exceeds the commute limit. "
+                f"The decision point was moved to {location.name}. Search a closer start point to use the commute advisor."
+            )
         self.dataset = ds
         self._after_dataset_update(message)
 
@@ -706,9 +741,14 @@ class AtmosLensState(param.Parameterized):
             and min(longitudes) - lon_pad <= self.location_lon <= max(longitudes) + lon_pad
         ):
             return False
-        self.location_name = self.route_end_name
-        self.location_lat = self.route_end_lat
-        self.location_lon = self.route_end_lon
+        previous_flag = self._ignore_location_sync_watch
+        self._ignore_location_sync_watch = True
+        try:
+            self.location_name = self.route_end_name
+            self.location_lat = self.route_end_lat
+            self.location_lon = self.route_end_lon
+        finally:
+            self._ignore_location_sync_watch = previous_flag
         return True
 
     def _autofit_region_from_route(self, *, focus: str, timezone_hint: str | None = None) -> None:

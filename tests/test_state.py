@@ -11,8 +11,8 @@ def test_scenario_matrix_covers_all_profiles_and_non_route_activities(sample_dat
 
     matrix = state.scenario_matrix()
 
-    assert len(matrix) == 12
-    assert set(matrix["activity"]) == {"Run", "Walk", "Ventilate"}
+    assert len(matrix) == 24
+    assert set(matrix["activity"]) == {"Run", "Walk", "Ventilate", "Outdoor Dining", "Children's Play", "Dog Walk"}
     assert set(matrix["profile"]) == {"General", "Sensitive", "Asthma", "Outdoor Worker"}
     assert float(matrix["score"].min()) <= float(matrix["score"].max())
 
