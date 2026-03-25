@@ -23,6 +23,7 @@ This repo is intentionally scoped as a strong March 31 artifact: something a Hol
 - **Activity Safety Advisor**: `Good`, `Caution`, or `Avoid`, plus the best time window and a short explanation.
 - **Interactive Pollution Map**: xarray-backed gridded data rendered with GeoViews + hvPlot.
 - **24-hour Forecast Timeline**: threshold bands and the highlighted best window.
+- **Decision Matrix**: compares profiles and activities side by side at the same location to show that the recommendation engine generalizes beyond a single query.
 - **Recommendation Card**: concise user-facing guidance instead of a raw forecast dump.
 - **Route / Commute Exposure Window**: preset or search-driven route endpoints sampled against the same gridded forecast across multiple departure times.
 - **Global Search + Region Refresh**: type a city, district, or postcode anywhere on Earth, refresh the forecast cube, and reuse the same xarray pipeline.
@@ -125,7 +126,7 @@ The fetch path intentionally builds a small regular grid around a real metro reg
 
 Current local status:
 
-- `7 passed` on Python `3.12.12`
+- `10 passed` on Python `3.12.12`
 - app object verified by importing `build_app()` and constructing the `FastListTemplate`
 
 ## Demo framing for HoloViz / GSoC
@@ -135,4 +136,5 @@ AtmosLens is not trying to be a complete air-quality platform. It is a convincin
 - real xarray-backed scientific data
 - visible use of the HoloViz ecosystem surfaced through `holoviz/holoviz`
 - a non-trivial decision layer on top of the data
+- scenario-level reasoning across multiple health profiles and activities at the same place
 - a clear path toward upstream Lumen work on xarray-native sources and transforms

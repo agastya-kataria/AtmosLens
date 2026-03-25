@@ -181,3 +181,28 @@ def build_route_plot(
     avoid_band = hv.HSpan(thresholds["caution"], upper).opts(fill_color="#f9c8c2", fill_alpha=0.25)
     best_window = hv.VSpan(best["departure"], best["arrival"]).opts(fill_color="#0f766e", fill_alpha=0.12)
     return (good_band * caution_band * avoid_band * best_window * line * points).opts(legend_position="top_left")
+
+
+def build_scenario_matrix_plot(matrix: pd.DataFrame):
+    score_map = hv.HeatMap(
+        matrix,
+        kdims=["activity", "profile"],
+        vdims=["score", "verdict", "best_window", "headline"],
+    ).opts(
+        width=620,
+        height=280,
+        cmap=["#0f766e", "#f59e0b", "#dc2626"],
+        clim=(0, 100),
+        colorbar=True,
+        colorbar_position="right",
+        title="Profile and activity decision matrix",
+        tools=["hover"],
+        xrotation=15,
+        line_color="#e2e8f0",
+        toolbar="right",
+    )
+    labels = hv.Labels(matrix, kdims=["activity", "profile"], vdims=["verdict"]).opts(
+        text_color="white",
+        text_font_size="10pt",
+    )
+    return (score_map * labels).opts(show_legend=False)

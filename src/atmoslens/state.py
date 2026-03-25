@@ -38,8 +38,11 @@ def _region_center(config):
     )
 
 
+CUSTOM_REGION_PRESET = "Custom Search"
+
+
 class AtmosLensState(param.Parameterized):
-    region_preset = param.ObjectSelector(default="Dublin Metro", objects=list(REGION_PRESETS))
+    region_preset = param.ObjectSelector(default="Dublin Metro", objects=[*list(REGION_PRESETS), CUSTOM_REGION_PRESET])
     region_name = param.String(default="Dublin Metro")
     region_center_lat = param.Number(default=53.3498, bounds=(-89.5, 89.5))
     region_center_lon = param.Number(default=-6.2603, bounds=(-179.5, 179.5))
@@ -82,6 +85,7 @@ class AtmosLensState(param.Parameterized):
         super().__init__(**params)
         self.dataset_path = Path(dataset_path or DEFAULT_DATA_PATH)
         self.live_dataset_path = LIVE_DATA_PATH
+        self._ignore_region_preset_watch = False
         self._location_search_results: list[LocationDefinition] = []
         self._route_start_search_results: list[LocationDefinition] = []
         self._route_end_search_results: list[LocationDefinition] = []
@@ -113,6 +117,8 @@ class AtmosLensState(param.Parameterized):
         self._route_result_cached.cache_clear()
 
     def _sync_region_controls_from_preset(self) -> None:
+        if self.region_preset not in REGION_PRESETS:
+            return
         config = REGION_PRESETS[self.region_preset]
         center_lat, center_lon, lat_span, lon_span = _region_center(config)
         self.region_name = config.name
@@ -143,6 +149,8 @@ class AtmosLensState(param.Parameterized):
         self.route_duration_minutes = preset.duration_minutes
 
     def _on_region_preset_changed(self, event) -> None:
+        if self._ignore_region_preset_watch or self.region_preset not in REGION_PRESETS:
+            return
         self._sync_region_controls_from_preset()
         region_locations = location_presets_for_region(self.region_preset)
         if region_locations:
@@ -150,6 +158,25 @@ class AtmosLensState(param.Parameterized):
         region_routes = route_presets_for_region(self.region_preset)
         if region_routes:
             self.route_preset = region_routes[0]
+
+    def _matching_region_preset(self, lat: float, lon: float) -> str | None:
+        for name, config in REGION_PRESETS.items():
+            lat_margin = max(0.2, (config.lat_max - config.lat_min) * 0.25)
+            lon_margin = max(0.25, (config.lon_max - config.lon_min) * 0.25)
+            if (
+                config.lat_min - lat_margin <= lat <= config.lat_max + lat_margin
+                and config.lon_min - lon_margin <= lon <= config.lon_max + lon_margin
+            ):
+                return name
+        return None
+
+    def _set_region_preset_display(self, lat: float, lon: float) -> None:
+        inferred = self._matching_region_preset(lat, lon) or CUSTOM_REGION_PRESET
+        self._ignore_region_preset_watch = True
+        try:
+            self.region_preset = inferred
+        finally:
+            self._ignore_region_preset_watch = False
 
     def _on_location_preset_changed(self, event) -> None:
         self._sync_location_from_preset()
@@ -277,6 +304,7 @@ class AtmosLensState(param.Parameterized):
         if location.timezone and location.timezone != "auto":
             self.forecast_timezone = location.timezone
         self.fit_region_to_points([(location.lat, location.lon)], label=f"{location.name} search region")
+        self._set_region_preset_display(location.lat, location.lon)
         self._seed_route_from_location()
         self.status_message = (
             f"Resolved {location.name}. Region recentered around the searched place and the commute route was reset to a local corridor."
@@ -289,6 +317,7 @@ class AtmosLensState(param.Parameterized):
         self.route_start_lon = location.lon
         self._refresh_route_name()
         self._autofit_region_from_route(focus="start", timezone_hint=location.timezone)
+        self._set_region_preset_display(location.lat, location.lon)
         self.status_message = (
             f"Resolved route start as {location.name}. Region was focused on the start side of the current route."
         )
@@ -300,6 +329,7 @@ class AtmosLensState(param.Parameterized):
         self.route_end_lon = location.lon
         self._refresh_route_name()
         self._autofit_region_from_route(focus="end", timezone_hint=location.timezone)
+        self._set_region_preset_display(location.lat, location.lon)
         synced_location = self._sync_location_to_route_end_if_remote()
         location_suffix = f" Decision point moved to {self.route_end_name} for consistency." if synced_location else ""
         self.status_message = (
@@ -469,6 +499,42 @@ class AtmosLensState(param.Parameterized):
             int(self.horizon_hours),
             int(self.dataset_revision),
         )
+
+    def scenario_matrix(self) -> pd.DataFrame:
+        location = self.current_location()
+        profiles = list(self.param.profile.objects)
+        activities = [activity for activity in self.param.activity.objects if activity != "Cycle Commute"]
+        records: list[dict[str, object]] = []
+        for profile in profiles:
+            for activity in activities:
+                result = self._activity_result_cached(
+                    location.name,
+                    location.lat,
+                    location.lon,
+                    profile,
+                    activity,
+                    self.pollutant,
+                    self.advisor_mode,
+                    int(self.horizon_hours),
+                    int(self.dataset_revision),
+                )
+                recommendation = result.recommendation
+                records.append(
+                    {
+                        "profile": profile,
+                        "activity": activity,
+                        "verdict": recommendation.verdict,
+                        "best_window": recommendation.best_window_label,
+                        "score": round(recommendation.score, 1),
+                        "current_value": round(recommendation.current_value, 1),
+                        "unit": recommendation.unit,
+                        "headline": recommendation.headline,
+                    }
+                )
+        matrix = pd.DataFrame(records)
+        matrix["profile"] = pd.Categorical(matrix["profile"], categories=profiles, ordered=True)
+        matrix["activity"] = pd.Categorical(matrix["activity"], categories=activities, ordered=True)
+        return matrix.sort_values(["profile", "activity"]).reset_index(drop=True)
 
     def bridge_schema(self) -> dict[str, object]:
         bridge = XarrayPipelineBridge(self.dataset)

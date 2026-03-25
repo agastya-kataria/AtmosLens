@@ -50,3 +50,21 @@ def test_applying_location_search_result_seeds_a_local_route(sample_dataset):
     assert state.route_end_name == "Tokyo, Japan"
     assert state.route_end_lat == state.location_lat
     assert state.route_end_lon == state.location_lon
+
+
+def test_applying_location_search_result_updates_region_preset_display(sample_dataset):
+    state = AtmosLensState(dataset=sample_dataset)
+    state._location_search_results = [
+        LocationDefinition(
+            "Sonipat, Haryana, India",
+            28.9948,
+            77.0194,
+            "Asia/Kolkata",
+            "India",
+        )
+    ]
+
+    state.apply_location_search_result(0)
+
+    assert state.region_preset == "Delhi NCR"
+    assert state.forecast_timezone == "Asia/Kolkata"
