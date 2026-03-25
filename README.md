@@ -1,6 +1,6 @@
 # AtmosLens
 
-AtmosLens is an air-quality decision copilot built with the HoloViz ecosystem. It turns a real xarray-backed forecast cube into recommendations such as when to run, when to ventilate, and which commute departure window minimizes exposure.
+AtmosLens is an air-quality decision copilot built with the HoloViz ecosystem surfaced through [`holoviz/holoviz`](https://github.com/holoviz/holoviz). It turns a real xarray-backed forecast cube into recommendations such as when to run, when to ventilate, and which commute departure window minimizes exposure.
 
 ![AtmosLens app preview](assets/atmoslens-preview.svg)
 
@@ -34,6 +34,8 @@ The preview above uses the real Dublin sample cube with `Ozone` selected because
 - `GeoViews` for map-native overlays and route rendering
 - `HoloViews` for structured overlays such as threshold bands and best-window spans
 - `hvPlot` for quick plotting directly from xarray / pandas objects
+- `Datashader` for rasterizing the map layer through the HoloViews/GeoViews stack
+- `Lumen` for a real in-app pipeline preview over the recommendation tables
 - `Param` for reactive state instead of ad hoc widget wiring
 - `Colorcet` for scientifically sane colormaps
 - `xarray` as the canonical data model for labeled N-dimensional air-quality data
@@ -54,6 +56,8 @@ AtmosLens already contains a small bridge in [`src/atmoslens/lumen_bridge.py`](s
 - serializes the request as a query-spec-like structure
 
 That is the start of an `XarraySource` story, not a fake extra module. The app hits a real architectural boundary: the workflow is naturally pipeline-based, but the source is still an xarray dataset.
+
+The HoloViz umbrella repo describes its core projects as `Panel`, `hvPlot`, `HoloViews`, `GeoViews`, `Datashader`, `Lumen`, `Colorcet`, and `Param`; AtmosLens now uses all of those except that Lumen is intentionally applied as a bridge around tabular pipeline outputs rather than as the primary app shell, because the missing upstream piece is first-class xarray support. The umbrella repo also describes itself as an entry point for workflows that combine multiple HoloViz tools in a single application, which is exactly the role AtmosLens is playing here. Sources: [holoviz/holoviz](https://github.com/holoviz/holoviz), [README lines 277-309](https://github.com/holoviz/holoviz#readme).
 
 ![Lumen bridge preview](assets/lumen-bridge-preview.svg)
 
@@ -103,6 +107,7 @@ The fetch path intentionally builds a small regular grid around a real metro reg
 - [`src/atmoslens/exposure.py`](src/atmoslens/exposure.py): route sampling and departure-time exposure ranking
 - [`src/atmoslens/recommendations.py`](src/atmoslens/recommendations.py): user-facing recommendation assembly
 - [`src/atmoslens/plotting.py`](src/atmoslens/plotting.py): GeoViews / HoloViews / hvPlot visual layer
+- [`src/atmoslens/lumen_support.py`](src/atmoslens/lumen_support.py): Lumen `Pipeline` helpers over AtmosLens outputs
 - [`src/atmoslens/state.py`](src/atmoslens/state.py): Param-based reactive state
 - [`src/atmoslens/views.py`](src/atmoslens/views.py): app layout and cards
 - [`src/atmoslens/lumen_bridge.py`](src/atmoslens/lumen_bridge.py): xarray-to-pipeline bridge prototype

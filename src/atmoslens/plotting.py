@@ -14,6 +14,7 @@ import holoviews as hv
 import hvplot.pandas  # noqa: F401
 import hvplot.xarray  # noqa: F401
 import pandas as pd
+from holoviews.operation.datashader import quadmesh_rasterize
 
 from atmoslens.datasets import DEFAULT_LOCATIONS
 from atmoslens.models import AnalysisResult, RouteDefinition
@@ -41,12 +42,8 @@ def build_pollution_map(
     route: RouteDefinition | None = None,
 ):
     meta = pollutant_meta(pollutant)
-    raster = frame.hvplot.quadmesh(
-        x="lon",
-        y="lat",
-        geo=True,
-        project=True,
-        tiles="CartoLight",
+    quadmesh = gv.QuadMesh(frame, crs=ccrs.PlateCarree())
+    raster = quadmesh_rasterize(quadmesh, aggregator="mean", dynamic=False).opts(
         responsive=True,
         min_height=440,
         alpha=0.86,
@@ -54,8 +51,9 @@ def build_pollution_map(
         colorbar=True,
         title=f"{meta['label']} map for {timestamp:%a %d %b %H:%M}",
         clabel=f"{meta['label']} ({meta['unit']})",
-        line_alpha=0,
+        tools=["hover"],
     )
+    tiles = gv.tile_sources.CartoLight.opts(alpha=0.7)
 
     points_df = pd.DataFrame(
         [{"name": name, "lat": lat, "lon": lon} for name, (lat, lon) in DEFAULT_LOCATIONS.items()]
@@ -88,7 +86,7 @@ def build_pollution_map(
         tools=["hover"],
     )
 
-    overlays = raster * points * selected
+    overlays = tiles * raster * points * selected
     if route is not None:
         route_path = gv.Path(
             [[(lon, lat) for lat, lon in route.points]],

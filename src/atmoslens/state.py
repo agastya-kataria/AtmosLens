@@ -25,7 +25,7 @@ class AtmosLensState(param.Parameterized):
     route = param.ObjectSelector(default="Sandyford to Docklands", objects=list(DEFAULT_ROUTES))
     profile = param.ObjectSelector(default="Sensitive", objects=["General", "Sensitive", "Asthma", "Outdoor Worker"])
     activity = param.ObjectSelector(default="Run", objects=["Run", "Walk", "Ventilate", "Cycle Commute"])
-    pollutant = param.ObjectSelector(default="pm2_5", objects=["pm2_5"])
+    pollutant = param.ObjectSelector(default="ozone", objects=["ozone"])
     advisor_mode = param.ObjectSelector(
         default="Next 24 hours",
         objects=["Next 24 hours", "Morning", "Afternoon", "Evening", "Overnight"],

@@ -5,6 +5,7 @@ import json
 import panel as pn
 
 from atmoslens.datasets import DEFAULT_ROUTES
+from atmoslens.lumen_support import build_activity_pipeline, build_route_pipeline, pipeline_summary_spec
 from atmoslens.plotting import build_pollution_map, build_route_plot, build_timeline_plot
 from atmoslens.profiles import pollutant_meta
 from atmoslens.state import AtmosLensState
@@ -108,7 +109,7 @@ def render_map_panel(state: AtmosLensState):
     )
     note = pn.pane.Markdown(
         (
-            f"**Spatial view.** GeoViews + hvPlot render the gridded xarray slice for "
+            f"**Spatial view.** GeoViews + hvPlot build the geographic layer, while Datashader rasterizes the gridded xarray slice for "
             f"`{state.pollutant}` at `{state.current_timestamp():%Y-%m-%d %H:%M}`. "
             f"The highlighted route makes the commute feature visibly tied to the same cube."
         ),
@@ -146,6 +147,8 @@ def render_commute_panel(state: AtmosLensState):
 def render_bridge_panel(state: AtmosLensState):
     schema = state.bridge_schema()
     query_spec = state.bridge_query_spec()
+    activity_pipeline = build_activity_pipeline(state.activity_result())
+    route_pipeline = build_route_pipeline(state.route_result())
     explanation = pn.pane.Markdown(
         """
         **Why this points upstream to Lumen**
@@ -156,11 +159,34 @@ def render_bridge_panel(state: AtmosLensState):
         """,
         css_classes=["atmoslens-note"],
     )
+    lumen_note = pn.pane.Markdown(
+        """
+        **Actual Lumen usage inside AtmosLens**
+
+        HoloViz lists Lumen as a core project in the umbrella repo. AtmosLens uses a real
+        `lumen.Pipeline` fed by an `InMemorySource` to preview how the recommendation tables want to
+        become declarative pipeline outputs today, while the missing upstream piece is the xarray-native source.
+        """,
+        css_classes=["atmoslens-note"],
+    )
     return pn.Column(
         explanation,
         pn.Row(
             pn.pane.JSON(schema, depth=3),
             pn.pane.JSON(query_spec, depth=3),
+        ),
+        lumen_note,
+        pn.Row(
+            pn.Column(
+                pn.pane.Markdown("**Lumen activity pipeline**", css_classes=["atmoslens-note"]),
+                pn.widgets.Tabulator(activity_pipeline.data, disabled=True, pagination="local", page_size=6),
+                pn.pane.JSON(pipeline_summary_spec(activity_pipeline), depth=4),
+            ),
+            pn.Column(
+                pn.pane.Markdown("**Lumen route pipeline**", css_classes=["atmoslens-note"]),
+                pn.widgets.Tabulator(route_pipeline.data, disabled=True, pagination="local", page_size=6),
+                pn.pane.JSON(pipeline_summary_spec(route_pipeline), depth=4),
+            ),
         ),
         pn.pane.Markdown(
             f"```json\n{json.dumps(query_spec, indent=2, default=str)}\n```",
