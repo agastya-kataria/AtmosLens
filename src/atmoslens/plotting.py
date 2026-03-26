@@ -15,6 +15,7 @@ import hvplot.pandas  # noqa: F401
 import hvplot.xarray  # noqa: F401
 import numpy as np
 import pandas as pd
+from scipy.ndimage import zoom
 
 from atmoslens.models import AnalysisResult, LocationDefinition, RouteDefinition
 from atmoslens.profiles import adjusted_thresholds, pollutant_meta
@@ -32,16 +33,14 @@ def pollutant_cmap(pollutant: str):
     }[pollutant]
 
 
-def _color_limits(frame) -> tuple[float, float]:
-    values = np.asarray(frame.values, dtype=float)
-    finite = values[np.isfinite(values)]
-    if finite.size == 0:
-        return (0.0, 1.0)
-    low = float(np.quantile(finite, 0.05))
-    high = float(np.quantile(finite, 0.95))
-    if high <= low:
-        high = low + 1.0
-    return (low, high)
+def _threshold_color_limits(pollutant: str) -> tuple[float, float]:
+    """Anchor the map colour scale to the pollutant's health thresholds so that
+    green always means "Good" and red always means "Avoid", regardless of how
+    narrow the data range is in a single snapshot."""
+    meta = pollutant_meta(pollutant)
+    # Scale from 0 to 1.5× the caution threshold — this centres the yellow-orange
+    # transition at the caution boundary and keeps green below the good threshold.
+    return (0.0, float(meta["caution"]) * 1.5)
 
 
 def build_pollution_map(
@@ -54,11 +53,19 @@ def build_pollution_map(
     route: RouteDefinition | None = None,
 ):
     meta = pollutant_meta(pollutant)
-    clim = _color_limits(frame)
+    clim = _threshold_color_limits(pollutant)
     lons = np.asarray(frame["lon"].values, dtype=float)
     lats = np.asarray(frame["lat"].values, dtype=float)
-    mesh = gv.QuadMesh(
-        (lons, lats, np.asarray(frame.values, dtype=float)),
+    raw = np.asarray(frame.values, dtype=float)
+    # Upsample the coarse grid to a smooth field so the map doesn't look blocky
+    target_cells = 80
+    zoom_lat = max(1, target_cells / max(raw.shape[0], 1))
+    zoom_lon = max(1, target_cells / max(raw.shape[1], 1))
+    smooth = zoom(raw, (zoom_lat, zoom_lon), order=3)
+    smooth_lats = np.linspace(float(lats.min()), float(lats.max()), smooth.shape[0])
+    smooth_lons = np.linspace(float(lons.min()), float(lons.max()), smooth.shape[1])
+    mesh = gv.Image(
+        (smooth_lons, smooth_lats, smooth),
         kdims=["Longitude", "Latitude"],
         vdims=[meta["label"]],
         crs=ccrs.PlateCarree(),
@@ -72,16 +79,22 @@ def build_pollution_map(
         colorbar=True,
         title=f"{meta['label']} — {timestamp:%a %d %b %H:%M} ({timezone_label})",
         clabel=f"{meta['label']} ({meta['unit']})",
-        line_alpha=0,
         projection=ccrs.GOOGLE_MERCATOR,
         tools=["hover"],
     )
-    lon_pad = max(0.05, (float(lons.max()) - float(lons.min())) * 0.15)
-    lat_pad = max(0.05, (float(lats.max()) - float(lats.min())) * 0.15)
+    lon_pad = max(0.02, (float(lons.max()) - float(lons.min())) * 0.06)
+    lat_pad = max(0.02, (float(lats.max()) - float(lats.min())) * 0.06)
+    # Transform padded bounds from degrees to Web Mercator metres for the tile layer
+    x0, y0 = ccrs.GOOGLE_MERCATOR.transform_point(
+        float(lons.min()) - lon_pad, float(lats.min()) - lat_pad, ccrs.PlateCarree(),
+    )
+    x1, y1 = ccrs.GOOGLE_MERCATOR.transform_point(
+        float(lons.max()) + lon_pad, float(lats.max()) + lat_pad, ccrs.PlateCarree(),
+    )
     tiles = gv.tile_sources.CartoLight.opts(
         alpha=0.88,
-        xlim=(float(lons.min()) - lon_pad, float(lons.max()) + lon_pad),
-        ylim=(float(lats.min()) - lat_pad, float(lats.max()) + lat_pad),
+        xlim=(x0, x1),
+        ylim=(y0, y1),
     )
 
     active_location = pd.DataFrame(

@@ -158,7 +158,7 @@ The fetch path intentionally builds a small regular grid around a real metro reg
 
 Current local status:
 
-- `21 passed` on Python `3.12.12`
+- `22 passed` on Python `3.12.12`
 - app object verified by importing `build_app()` and constructing the `FastListTemplate`
 - end-to-end smoke test passes: search, fetch, activity, route, matrix, bridge, lumen pipelines, map frame
 

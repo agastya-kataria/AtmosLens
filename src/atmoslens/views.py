@@ -378,7 +378,8 @@ def render_map_panel(state: AtmosLensState):
             ),
             css_classes=["atmoslens-note"],
         )
-        return pn.Column(note, plot)
+        map_pane = pn.pane.HoloViews(plot, sizing_mode="fixed")
+        return pn.Column(note, map_pane)
     except Exception as exc:  # noqa: BLE001
         return _state_error_panel("Pollution Map", state, str(exc))
 
@@ -403,7 +404,8 @@ def render_timeline_panel(state: AtmosLensState):
             ),
             css_classes=["atmoslens-note"],
         )
-        return pn.Column(note, plot)
+        timeline_pane = pn.pane.HoloViews(plot, sizing_mode="fixed")
+        return pn.Column(note, timeline_pane)
     except Exception as exc:  # noqa: BLE001
         return _state_error_panel("Forecast Timeline", state, str(exc))
 
@@ -427,7 +429,8 @@ def render_commute_panel(state: AtmosLensState):
             ),
             css_classes=["atmoslens-note"],
         )
-        return pn.Column(note, plot)
+        commute_pane = pn.pane.HoloViews(plot, sizing_mode="fixed")
+        return pn.Column(note, commute_pane)
     except Exception as exc:  # noqa: BLE001
         return _state_error_panel("Commute Window", state, str(exc))
 
@@ -458,8 +461,9 @@ def render_matrix_panel(state: AtmosLensState):
         pagination="local",
         page_size=len(matrix),
     )
+    matrix_pane = pn.pane.HoloViews(plot, sizing_mode="fixed")
     return pn.Row(
-        pn.Column(note, plot),
+        pn.Column(note, matrix_pane),
         pn.Column(
             pn.pane.Markdown("**Scenario ranking**", css_classes=["atmoslens-note"]),
             ranking,

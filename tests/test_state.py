@@ -122,3 +122,27 @@ def test_current_local_time_uses_selected_timezone(sample_dataset):
     assert str(now.tzinfo) == "Asia/Kolkata"
     assert localized.hour == 0
     assert str(localized.tzinfo) == "Asia/Kolkata"
+
+
+def test_cross_continent_route_start_resets_far_route_end(sample_dataset):
+    """Regression: searching a route start far from the current route end should auto-reset the end."""
+    state = AtmosLensState(dataset=sample_dataset)
+    state._route_start_search_results = [
+        LocationDefinition("Maynooth, Ireland", 53.3813, -6.5918, "Europe/Dublin", "Ireland")
+    ]
+
+    # Manually set route end to Delhi (far away) to simulate the cross-continent scenario
+    state._ignore_route_sync_watch = True
+    state.route_end_name = "Delhi, India"
+    state.route_end_lat = 28.6139
+    state.route_end_lon = 77.2090
+    state._ignore_route_sync_watch = False
+
+    state.apply_route_start_search_result(0)
+
+    assert state.route_start_name == "Maynooth, Ireland"
+    # Route end should have been auto-reset to a local seed, not still be Delhi
+    assert state.route_end_name != "Delhi, India"
+    assert abs(state.route_end_lat - state.route_start_lat) < 1.0
+    assert abs(state.route_end_lon - state.route_start_lon) < 1.0
+    assert state.route_commute_ready() is True

@@ -478,6 +478,34 @@ def fetch_open_meteo_point(
     )
 
 
+def _realistic_spatial_pattern(n_lat: int, n_lon: int, seed: int = 0) -> np.ndarray:
+    """Generate a spatially-correlated pattern that resembles real pollution fields.
+
+    Uses a sum of low-frequency sinusoids with random phases to mimic the smooth,
+    non-uniform spatial gradients seen in real gridded forecast data — avoiding the
+    obviously-fake diagonal gradient of a simple ``lat - lon`` formula.
+    """
+    rng = np.random.RandomState(seed)
+    lat_grid = np.linspace(-1.0, 1.0, n_lat)[:, None]
+    lon_grid = np.linspace(-1.0, 1.0, n_lon)[None, :]
+    pattern = np.zeros((n_lat, n_lon), dtype=float)
+    # Sum several LOW-frequency spatial harmonics so even coarse grids look smooth
+    for _ in range(5):
+        freq_lat = rng.uniform(0.3, 1.2)
+        freq_lon = rng.uniform(0.3, 1.2)
+        phase = rng.uniform(0, 2 * np.pi)
+        amplitude = rng.uniform(0.15, 0.35)
+        pattern += amplitude * np.sin(freq_lat * np.pi * lat_grid + freq_lon * np.pi * lon_grid + phase)
+    # Add a slight urban-centre hotspot (center of grid is often the city core)
+    dist_from_center = np.sqrt(lat_grid**2 + lon_grid**2)
+    pattern += 0.3 * np.exp(-1.5 * dist_from_center**2)
+    # Normalize to roughly [-1, 1]
+    ptp = pattern.max() - pattern.min()
+    if ptp > 0:
+        pattern = 2.0 * (pattern - pattern.min()) / ptp - 1.0
+    return pattern[None, :, :]  # (1, lat, lon) for broadcasting with time
+
+
 def expand_point_forecast_to_grid(
     point_ds: xr.Dataset,
     config: RegionConfig,
@@ -485,9 +513,7 @@ def expand_point_forecast_to_grid(
     output_path: str | Path | None = None,
 ) -> xr.Dataset:
     latitudes, longitudes, _ = build_grid(config)
-    lat_pattern = np.linspace(-1.0, 1.0, len(latitudes), dtype=float)[None, :, None]
-    lon_pattern = np.linspace(-1.0, 1.0, len(longitudes), dtype=float)[None, None, :]
-    spatial_pattern = 0.5 * lat_pattern - 0.35 * lon_pattern + 0.18 * np.cos(np.pi * lat_pattern * lon_pattern)
+    spatial_pattern = _realistic_spatial_pattern(len(latitudes), len(longitudes), seed=42)
 
     data_vars: dict[str, tuple[tuple[str, ...], np.ndarray, dict[str, str]]] = {}
     for pollutant in available_pollutants(point_ds):
@@ -536,16 +562,14 @@ def build_template_fallback_grid(
 ) -> xr.Dataset:
     template = validate_dataset(xr.load_dataset(DEFAULT_DATA_PATH))
     latitudes, longitudes, _ = build_grid(config)
-    lat_pattern = np.linspace(-1.0, 1.0, len(latitudes), dtype=float)[None, :, None]
-    lon_pattern = np.linspace(-1.0, 1.0, len(longitudes), dtype=float)[None, None, :]
-    radial_pattern = np.sqrt(lat_pattern**2 + lon_pattern**2)
+    spatial_pattern = _realistic_spatial_pattern(len(latitudes), len(longitudes), seed=17)
 
     data_vars: dict[str, tuple[tuple[str, ...], np.ndarray, dict[str, str]]] = {}
     for pollutant in available_pollutants(template):
         source = np.asarray(template[pollutant].values, dtype=float)
         base = source.mean(axis=(1, 2), keepdims=True)
         spread = max(float(np.nanstd(base[:, 0, 0])) * 0.55, float(np.nanmean(base[:, 0, 0])) * 0.06, 1.0)
-        cube = np.clip(base + (0.55 * lat_pattern - 0.3 * lon_pattern + 0.12 * radial_pattern) * spread, a_min=0.0, a_max=None)
+        cube = np.clip(base + spatial_pattern * spread, a_min=0.0, a_max=None)
         data_vars[pollutant] = (
             ("time", "lat", "lon"),
             cube,
