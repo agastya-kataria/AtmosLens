@@ -1,65 +1,271 @@
-<svg width="1400" height="720" viewBox="0 0 1400 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="1400" height="800" viewBox="0 0 1400 800" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg2" x1="0" y1="0" x2="1400" y2="720" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F8FAFC"/>
-      <stop offset="1" stop-color="#FFF7ED"/>
+    <linearGradient id="hdrBg" x1="0" y1="0" x2="0" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F0FDFA"/>
+      <stop offset="1" stop-color="#F8FAFC"/>
+    </linearGradient>
+    <linearGradient id="footBg" x1="0" y1="0" x2="0" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#F1F5F9"/>
     </linearGradient>
   </defs>
-  <rect width="1400" height="720" rx="30" fill="url(#bg2)"/>
-  <text x="66" y="88" fill="#0F172A" font-family="Avenir Next, Segoe UI, sans-serif" font-size="40" font-weight="700">AtmosLens bridge to a future Lumen XarraySource</text>
-  <text x="66" y="126" fill="#475569" font-family="Avenir Next, Segoe UI, sans-serif" font-size="22">The app already expresses its workflow as explicit xarray-aware transforms.</text>
 
-  <rect x="66" y="176" width="354" height="462" rx="24" fill="#FFFFFF" stroke="#CBD5E1"/>
-  <text x="92" y="226" fill="#0F172A" font-family="Avenir Next, Segoe UI, sans-serif" font-size="28" font-weight="700">xarray dataset schema</text>
-  <g font-family="Avenir Next, Segoe UI, sans-serif" font-size="20" fill="#334155">
-    <text x="92" y="278">dims</text>
-    <text x="132" y="312">time: 48</text>
-    <text x="132" y="342">lat: 9</text>
-    <text x="132" y="372">lon: 11</text>
-    <text x="92" y="430">variables</text>
-    <text x="132" y="464">pm2_5</text>
-    <text x="132" y="494">nitrogen_dioxide</text>
-    <text x="132" y="524">ozone</text>
-    <text x="132" y="554">european_aqi</text>
-    <text x="92" y="612">attrs</text>
-    <text x="132" y="646">source: Open-Meteo Air Quality API</text>
-  </g>
+  <!-- ── Canvas ── -->
+  <rect width="1400" height="800" fill="#F1F5F9"/>
 
-  <path d="M454 410H614" stroke="#0F766E" stroke-width="10" stroke-linecap="round"/>
-  <path d="M592 384L636 410L592 436" stroke="#0F766E" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- ── Header strip ── -->
+  <rect x="0" y="0" width="1400" height="90" fill="url(#hdrBg)"/>
+  <rect x="0" y="88" width="1400" height="2" fill="#E2E8F0"/>
 
-  <rect x="646" y="176" width="334" height="462" rx="24" fill="#FFFFFF" stroke="#CBD5E1"/>
-  <text x="672" y="226" fill="#0F172A" font-family="Avenir Next, Segoe UI, sans-serif" font-size="28" font-weight="700">Transform steps</text>
-  <g font-family="Avenir Next, Segoe UI, sans-serif">
-    <rect x="672" y="264" width="282" height="54" rx="14" fill="#E0F2FE"/>
-    <text x="694" y="298" fill="#0F172A" font-size="20" font-weight="600">1. select_location</text>
-    <rect x="672" y="334" width="282" height="54" rx="14" fill="#DCFCE7"/>
-    <text x="694" y="368" fill="#0F172A" font-size="20" font-weight="600">2. select_time_range</text>
-    <rect x="672" y="404" width="282" height="54" rx="14" fill="#FEF3C7"/>
-    <text x="694" y="438" fill="#0F172A" font-size="20" font-weight="600">3. aggregate_hourly_windows</text>
-    <rect x="672" y="474" width="282" height="54" rx="14" fill="#FDE68A"/>
-    <text x="694" y="508" fill="#0F172A" font-size="20" font-weight="600">4. score_exposure</text>
-    <rect x="672" y="544" width="282" height="54" rx="14" fill="#FED7AA"/>
-    <text x="694" y="578" fill="#0F172A" font-size="20" font-weight="600">5. recommend_activity</text>
-  </g>
+  <!-- Inheritance badge (teal) -->
+  <rect x="40" y="13" width="382" height="28" rx="14" fill="#CCFBF1" stroke="#5EEAD4" stroke-width="1"/>
+  <text x="55" y="32" font-family="Menlo,Consolas,'Courier New',monospace" font-size="12.5" fill="#0F766E" font-weight="600">AtmosXarraySource  extends  lumen.sources.Source</text>
 
-  <path d="M1014 410H1174" stroke="#D97706" stroke-width="10" stroke-linecap="round"/>
-  <path d="M1152 384L1196 410L1152 436" stroke="#D97706" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- GSoC badge (amber) -->
+  <rect x="1182" y="13" width="178" height="28" rx="14" fill="#FEF3C7" stroke="#FCD34D" stroke-width="1"/>
+  <text x="1197" y="32" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="12.5" fill="#B45309" font-weight="600">HoloViz GSoC 2026</text>
 
-  <rect x="1206" y="176" width="128" height="462" rx="24" fill="#0F172A"/>
-  <text x="1230" y="226" fill="#F8FAFC" font-family="Avenir Next, Segoe UI, sans-serif" font-size="28" font-weight="700">Query spec</text>
-  <g font-family="Menlo, Monaco, monospace" font-size="15" fill="#CBD5E1">
-    <text x="1230" y="276">{</text>
-    <text x="1244" y="306">"source": "xarray",</text>
-    <text x="1244" y="336">"variable": "ozone",</text>
-    <text x="1244" y="366">"coords": ["time",</text>
-    <text x="1244" y="394">"lat", "lon"],</text>
-    <text x="1244" y="424">"horizon_hours": 24,</text>
-    <text x="1244" y="454">"transforms": [...]</text>
-    <text x="1230" y="484">}</text>
-  </g>
-  <text x="66" y="688" fill="#475569" font-family="Avenir Next, Segoe UI, sans-serif" font-size="20">
-    This is the strategic link: AtmosLens is already using xarray in a way that wants a first-class Lumen source and reusable xarray-native transforms.
+  <!-- Main title -->
+  <text x="40" y="73" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="33" font-weight="700" fill="#0F172A">AtmosLens — Lumen Bridge</text>
+  <text x="478" y="73" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="14" fill="#64748B">Lumen + Xarray Integration · real Source subclass + DuckDB SQL · 250 tests passing</text>
+
+
+  <!-- ════════════════════════════════════════
+       CARD 1 — AtmosXarraySource
+       x=40  y=98  w=415  h=374
+       ════════════════════════════════════════ -->
+  <rect x="40" y="98" width="415" height="374" rx="16" fill="white" stroke="#A7F3D0" stroke-width="1.5"/>
+
+  <!-- Card 1 header tint -->
+  <rect x="40" y="98" width="415" height="62" rx="16" fill="#F0FDFA"/>
+  <rect x="40" y="144" width="415" height="16" fill="#F0FDFA"/>
+
+  <!-- Accent bar -->
+  <rect x="57" y="113" width="4" height="32" rx="2" fill="#0F766E"/>
+
+  <!-- Card 1 titles -->
+  <text x="71" y="133" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="16" font-weight="700" fill="#0F172A">AtmosXarraySource</text>
+  <text x="71" y="151" font-family="Menlo,Consolas,'Courier New',monospace" font-size="10.5" fill="#0F766E">extends lumen.sources.Source · source_type = "atmos_xarray"</text>
+
+  <!-- Code block dark -->
+  <rect x="56" y="166" width="383" height="170" rx="10" fill="#0F172A"/>
+
+  <!-- Code lines — class definition -->
+  <text x="68" y="184" font-family="Menlo,Consolas,'Courier New',monospace" font-size="11" fill="#64748B"># GSoC prototype — lumen.sources.Source subclass</text>
+
+  <text x="68" y="199" font-family="Menlo,Consolas,'Courier New',monospace" font-size="11">
+    <tspan fill="#7DD3FC">class </tspan><tspan fill="#FCD34D">AtmosXarraySource</tspan><tspan fill="#E2E8F0">(lumen.sources.Source):</tspan>
   </text>
-</svg>
 
+  <text x="68" y="213" font-family="Menlo,Consolas,'Courier New',monospace" font-size="11">
+    <tspan fill="#E2E8F0">    source_type </tspan><tspan fill="#94A3B8">= </tspan><tspan fill="#FCA5A5">"atmos_xarray"</tspan>
+  </text>
+  <text x="68" y="227" font-family="Menlo,Consolas,'Courier New',monospace" font-size="11">
+    <tspan fill="#E2E8F0">    dataset     </tspan><tspan fill="#94A3B8">= </tspan><tspan fill="#86EFAC">param</tspan><tspan fill="#E2E8F0">.Parameter()</tspan>
+  </text>
+
+  <text x="68" y="245" font-family="Menlo,Consolas,'Courier New',monospace" font-size="11">
+    <tspan fill="#7DD3FC">    def </tspan><tspan fill="#86EFAC">get_tables</tspan><tspan fill="#E2E8F0">(self) -> list[str]:</tspan>
+  </text>
+  <text x="68" y="259" font-family="Menlo,Consolas,'Courier New',monospace" font-size="11">
+    <tspan fill="#E2E8F0">        </tspan><tspan fill="#7DD3FC">return </tspan><tspan fill="#86EFAC">list</tspan><tspan fill="#E2E8F0">(self.dataset.data_vars)</tspan>
+  </text>
+
+  <text x="68" y="277" font-family="Menlo,Consolas,'Courier New',monospace" font-size="11">
+    <tspan fill="#7DD3FC">    def </tspan><tspan fill="#86EFAC">get</tspan><tspan fill="#E2E8F0">(self, table: str, **query) -> DataFrame:</tspan>
+  </text>
+  <text x="68" y="291" font-family="Menlo,Consolas,'Courier New',monospace" font-size="11" fill="#64748B">        # lat_min/lat_max  → .sel(lat=slice(...))</text>
+  <text x="68" y="305" font-family="Menlo,Consolas,'Courier New',monospace" font-size="11" fill="#64748B">        # time_start/end   → .sel(time=slice(...))</text>
+  <text x="68" y="319" font-family="Menlo,Consolas,'Courier New',monospace" font-size="11" fill="#64748B">        # returns pd.DataFrame  (Lumen compat.)</text>
+
+  <!-- Below code block -->
+  <text x="56" y="351" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="12" font-weight="600" fill="#0F172A">Quick API check:</text>
+
+  <text x="56" y="368" font-family="Menlo,Consolas,'Courier New',monospace" font-size="10.5" fill="#475569">get_tables() → ['pm2_5','nitrogen_dioxide','ozone','european_aqi']</text>
+
+  <text x="56" y="385" font-family="Menlo,Consolas,'Courier New',monospace" font-size="10.5" fill="#475569">get_schema('pm2_5')['coords']['time']</text>
+  <text x="56" y="399" font-family="Menlo,Consolas,'Courier New',monospace" font-size="10.5" fill="#475569">  → {'start':'2026-03-25','end':'2026-03-26','n':48}</text>
+
+  <text x="56" y="418" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="11" fill="#94A3B8">← coordinate ranges, not column types</text>
+  <text x="56" y="434" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="11" fill="#94A3B8">   → the structural design gap this project fills</text>
+  <text x="56" y="450" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="11" fill="#0F766E" font-weight="600">✓ issubclass(AtmosXarraySource, lumen.sources.Source) == True</text>
+
+
+  <!-- ════════════════════════════════════════
+       CARD 2 — Pipeline Steps
+       x=473  y=98  w=415  h=374
+       ════════════════════════════════════════ -->
+  <rect x="473" y="98" width="415" height="374" rx="16" fill="white" stroke="#E2E8F0" stroke-width="1.5"/>
+
+  <!-- Card 2 header tint -->
+  <rect x="473" y="98" width="415" height="62" rx="16" fill="#FFF7ED"/>
+  <rect x="473" y="144" width="415" height="16" fill="#FFF7ED"/>
+
+  <!-- Accent bar -->
+  <rect x="490" y="113" width="4" height="32" rx="2" fill="#D97706"/>
+
+  <!-- Card 2 titles -->
+  <text x="504" y="133" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="16" font-weight="700" fill="#0F172A">Analysis Pipeline Steps</text>
+  <text x="504" y="151" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="12" fill="#D97706">5 explicit xarray-aware transforms · serialised as query spec</text>
+
+  <!-- cx = 473 + 207 = 680 -->
+
+  <!-- Step 1 (y=168 h=40) -->
+  <rect x="490" y="168" width="382" height="40" rx="9" fill="#E0F2FE"/>
+  <text x="506" y="183" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" font-weight="700" fill="#0F172A">① select_location</text>
+  <text x="506" y="199" font-family="Menlo,Consolas,'Courier New',monospace" font-size="10.5" fill="#475569">lat=53.33, lon=−6.25  ·  .interp(lat=..., lon=...)</text>
+  <!-- arrow -->
+  <line x1="681" y1="209" x2="681" y2="216" stroke="#CBD5E1" stroke-width="2"/>
+  <polygon points="676,214 686,214 681,221" fill="#CBD5E1"/>
+
+  <!-- Step 2 (y=222 h=40) -->
+  <rect x="490" y="222" width="382" height="40" rx="9" fill="#DCFCE7"/>
+  <text x="506" y="237" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" font-weight="700" fill="#0F172A">② select_time_range</text>
+  <text x="506" y="253" font-family="Menlo,Consolas,'Courier New',monospace" font-size="10.5" fill="#475569">horizon_hours=24  ·  .sel(time=slice(t0, t24))</text>
+  <!-- arrow -->
+  <line x1="681" y1="263" x2="681" y2="270" stroke="#CBD5E1" stroke-width="2"/>
+  <polygon points="676,268 686,268 681,275" fill="#CBD5E1"/>
+
+  <!-- Step 3 (y=276 h=40) -->
+  <rect x="490" y="276" width="382" height="40" rx="9" fill="#FEF9C3"/>
+  <text x="506" y="291" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" font-weight="700" fill="#0F172A">③ aggregate_hourly_windows</text>
+  <text x="506" y="307" font-family="Menlo,Consolas,'Courier New',monospace" font-size="10.5" fill="#475569">window_hours=2  ·  blend=(mean×0.7 + peak×0.3)</text>
+  <!-- arrow -->
+  <line x1="681" y1="317" x2="681" y2="324" stroke="#CBD5E1" stroke-width="2"/>
+  <polygon points="676,322 686,322 681,329" fill="#CBD5E1"/>
+
+  <!-- Step 4 (y=330 h=40) -->
+  <rect x="490" y="330" width="382" height="40" rx="9" fill="#FDE68A"/>
+  <text x="506" y="345" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" font-weight="700" fill="#0F172A">④ score_exposure</text>
+  <text x="506" y="361" font-family="Menlo,Consolas,'Courier New',monospace" font-size="10.5" fill="#475569">profile=sensitive  ·  threshold_mult=0.85</text>
+  <!-- arrow -->
+  <line x1="681" y1="371" x2="681" y2="378" stroke="#CBD5E1" stroke-width="2"/>
+  <polygon points="676,376 686,376 681,383" fill="#CBD5E1"/>
+
+  <!-- Step 5 (y=384 h=40) -->
+  <rect x="490" y="384" width="382" height="40" rx="9" fill="#FED7AA"/>
+  <text x="506" y="399" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" font-weight="700" fill="#0F172A">⑤ recommend_activity</text>
+  <text x="506" y="415" font-family="Menlo,Consolas,'Courier New',monospace" font-size="10.5" fill="#475569">verdict='CAUTION'  ·  best_window='22:00–00:00'</text>
+
+  <!-- arrow to result -->
+  <line x1="681" y1="425" x2="681" y2="432" stroke="#0F766E" stroke-width="2"/>
+  <polygon points="676,430 686,430 681,437" fill="#0F766E"/>
+
+  <!-- Result verdict box -->
+  <rect x="490" y="438" width="382" height="30" rx="8" fill="#0F766E"/>
+  <text x="506" y="458" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="12.5" font-weight="700" fill="white">Lumen Pipeline · AtmosXarraySource · CAUTION</text>
+
+
+  <!-- ════════════════════════════════════════
+       CARD 3 — SQL via DuckDB
+       x=906  y=98  w=454  h=374
+       ════════════════════════════════════════ -->
+  <rect x="906" y="98" width="454" height="374" rx="16" fill="#0F172A"/>
+
+  <!-- Card 3 header (slightly lighter) -->
+  <rect x="906" y="98" width="454" height="64" rx="16" fill="#1E293B"/>
+  <rect x="906" y="146" width="454" height="16" fill="#1E293B"/>
+  <rect x="906" y="162" width="454" height="1" fill="#334155"/>
+
+  <!-- Accent bar (blue) -->
+  <rect x="923" y="113" width="4" height="32" rx="2" fill="#38BDF8"/>
+
+  <!-- Card 3 titles -->
+  <text x="937" y="133" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">SQL via DuckDB</text>
+  <text x="937" y="151" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="12" fill="#38BDF8">xarray slice → in-memory DuckDB table → SQL query</text>
+
+  <!-- SQL comment line -->
+  <text x="923" y="181" font-family="Menlo,Consolas,'Courier New',monospace" font-size="11" fill="#64748B">-- xarray cube registered as DuckDB relation "forecast"</text>
+
+  <!-- SQL lines with keyword highlighting -->
+  <text x="923" y="199" font-family="Menlo,Consolas,'Courier New',monospace" font-size="12">
+    <tspan fill="#7DD3FC">SELECT </tspan><tspan fill="#E2E8F0">time, lat, lon, pm2_5</tspan>
+  </text>
+  <text x="923" y="217" font-family="Menlo,Consolas,'Courier New',monospace" font-size="12">
+    <tspan fill="#7DD3FC">FROM   </tspan><tspan fill="#86EFAC">forecast</tspan>
+  </text>
+  <text x="923" y="235" font-family="Menlo,Consolas,'Courier New',monospace" font-size="12">
+    <tspan fill="#7DD3FC">WHERE  </tspan><tspan fill="#E2E8F0">time </tspan><tspan fill="#7DD3FC">BETWEEN</tspan>
+  </text>
+  <text x="923" y="253" font-family="Menlo,Consolas,'Courier New',monospace" font-size="12">
+    <tspan fill="#E2E8F0">           </tspan><tspan fill="#FCA5A5">'2026-03-25T00:00'</tspan>
+  </text>
+  <text x="923" y="271" font-family="Menlo,Consolas,'Courier New',monospace" font-size="12">
+    <tspan fill="#E2E8F0">       </tspan><tspan fill="#7DD3FC">AND </tspan><tspan fill="#FCA5A5">'2026-03-26T00:00'</tspan>
+  </text>
+  <text x="923" y="289" font-family="Menlo,Consolas,'Courier New',monospace" font-size="12">
+    <tspan fill="#7DD3FC">  AND  </tspan><tspan fill="#E2E8F0">lat </tspan><tspan fill="#7DD3FC">BETWEEN </tspan><tspan fill="#FCD34D">53.24 </tspan><tspan fill="#7DD3FC">AND </tspan><tspan fill="#FCD34D">53.37</tspan>
+  </text>
+  <text x="923" y="307" font-family="Menlo,Consolas,'Courier New',monospace" font-size="12">
+    <tspan fill="#7DD3FC">  AND  </tspan><tspan fill="#E2E8F0">pm2_5 &gt; </tspan><tspan fill="#FCD34D">3.9</tspan>
+  </text>
+  <text x="923" y="325" font-family="Menlo,Consolas,'Courier New',monospace" font-size="12">
+    <tspan fill="#7DD3FC">ORDER BY </tspan><tspan fill="#E2E8F0">pm2_5 </tspan><tspan fill="#7DD3FC">DESC</tspan>
+  </text>
+  <text x="923" y="343" font-family="Menlo,Consolas,'Courier New',monospace" font-size="12">
+    <tspan fill="#7DD3FC">LIMIT </tspan><tspan fill="#FCD34D">20</tspan>
+  </text>
+
+  <!-- Divider -->
+  <line x1="923" y1="357" x2="1344" y2="357" stroke="#334155" stroke-width="1"/>
+
+  <!-- Result label -->
+  <text x="923" y="374" font-family="Menlo,Consolas,'Courier New',monospace" font-size="11" fill="#64748B">-- Result: 20 rows × 4 cols</text>
+
+  <!-- Result table header -->
+  <rect x="923" y="380" width="411" height="20" rx="4" fill="#1E293B"/>
+  <text x="929" y="394" font-family="Menlo,Consolas,'Courier New',monospace" font-size="10.5" fill="#7DD3FC">time                    lat      lon     pm2_5</text>
+
+  <!-- Result rows -->
+  <text x="929" y="411" font-family="Menlo,Consolas,'Courier New',monospace" font-size="10.5" fill="#E2E8F0">2026-03-25 22:00:00   53.336  −6.225    4.6</text>
+  <text x="929" y="427" font-family="Menlo,Consolas,'Courier New',monospace" font-size="10.5" fill="#E2E8F0">2026-03-25 21:00:00   53.336  −6.225    4.6</text>
+  <text x="929" y="443" font-family="Menlo,Consolas,'Courier New',monospace" font-size="10.5" fill="#94A3B8">2026-03-25 20:00:00   53.336  −6.264    4.6</text>
+  <text x="929" y="457" font-family="Menlo,Consolas,'Courier New',monospace" font-size="10.5" fill="#475569">... 17 more rows</text>
+
+
+  <!-- ════════════════════════════════════════
+       DESIGN GAP CARD
+       x=40  y=490  w=1320  h=242
+       ════════════════════════════════════════ -->
+  <rect x="40" y="490" width="1320" height="242" rx="16" fill="white" stroke="#E2E8F0" stroke-width="1.5"/>
+
+  <!-- Design gap header -->
+  <rect x="40" y="490" width="1320" height="52" rx="16" fill="#F8FAFC"/>
+  <rect x="40" y="526" width="1320" height="16" fill="#F8FAFC"/>
+  <rect x="40" y="542" width="1320" height="1" fill="#E2E8F0"/>
+
+  <text x="60" y="524" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="16" font-weight="700" fill="#0F172A">Design Gap → Upstream Lumen Contribution</text>
+  <text x="660" y="524" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" fill="#64748B">AtmosXarraySource demonstrates path 1 · GSoC builds path 2 · 350 hours</text>
+
+  <!-- Left column: TODAY -->
+  <rect x="60" y="552" width="108" height="24" rx="12" fill="#CCFBF1"/>
+  <text x="73" y="569" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="12" font-weight="700" fill="#0F766E">TODAY  ✓</text>
+
+  <text x="60" y="592" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" fill="#334155">•  get() returns pd.DataFrame (flattened after xarray slicing)</text>
+  <text x="60" y="612" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" fill="#334155">•  get_schema() exposes coordinate ranges as a plain dict</text>
+  <text x="60" y="632" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" fill="#334155">•  SQL via DuckDB over a flattened xarray slice</text>
+  <text x="60" y="652" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" fill="#334155">•  Coordinate queries via keyword args (lat_min, time_start)</text>
+  <text x="60" y="672" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" fill="#334155">•  250 tests passing · live Open-Meteo API · global search</text>
+
+  <!-- Vertical divider + arrow -->
+  <line x1="688" y1="552" x2="688" y2="700" stroke="#E2E8F0" stroke-width="1.5"/>
+  <text x="665" y="634" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="30" fill="#CBD5E1">→</text>
+
+  <!-- Right column: UPSTREAM -->
+  <rect x="706" y="552" width="178" height="24" rx="12" fill="#FEF3C7"/>
+  <text x="720" y="569" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="12" font-weight="700" fill="#B45309">UPSTREAM  GSoC 350h</text>
+
+  <text x="706" y="592" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" fill="#334155">•  Pipeline stages pass xr.DataArray natively (no flatten)</text>
+  <text x="706" y="612" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" fill="#334155">•  Lumen AI planner understands N-dimensional coord schemas</text>
+  <text x="706" y="632" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" fill="#334155">•  xarray-sql in the Source layer for native coord queries</text>
+  <text x="706" y="652" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" fill="#334155">•  Declarative transform spec: spatial slice → reduce → score</text>
+  <text x="706" y="672" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" fill="#334155">•  Dask lazy eval · anndata · PyMC · geospatial analytics</text>
+
+
+  <!-- ── Footer ── -->
+  <rect x="0" y="756" width="1400" height="44" fill="url(#footBg)"/>
+  <rect x="0" y="756" width="1400" height="1" fill="#E2E8F0"/>
+
+  <text x="40" y="782" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" fill="#94A3B8">250 tests passing · Panel · HoloViews · GeoViews · hvPlot · Datashader · Lumen · Param · Colorcet · xarray · DuckDB · Python 3.12</text>
+  <text x="1360" y="782" font-family="'Segoe UI',system-ui,-apple-system,sans-serif" font-size="13" fill="#94A3B8" text-anchor="end">pixi run start</text>
+</svg>
