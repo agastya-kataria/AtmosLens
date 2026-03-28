@@ -60,7 +60,7 @@ Every recommendation includes:
 - `HoloViews` for structured overlays such as threshold bands and best-window spans
 - `hvPlot` for quick plotting directly from xarray / pandas objects
 - `Datashader` for rasterizing the map layer through the HoloViews/GeoViews stack
-- `Lumen` for a real in-app pipeline preview over the recommendation tables
+- `Lumen` for `AtmosXarraySource` (a real `lumen.sources.Source` subclass) and in-app pipeline previews
 - `Param` for reactive state instead of ad hoc widget wiring
 - `Colorcet` for scientifically sane colormaps
 - `xarray` as the canonical data model for labeled N-dimensional air-quality data
@@ -72,17 +72,59 @@ Every recommendation includes:
 - The app logic stays dimension-aware instead of flattening everything into unrelated tables.
 - That makes AtmosLens a credible motivating artifact for upstream Lumen work on first-class xarray sources and transforms.
 
-## Why this naturally becomes a Lumen + xarray project
+## GSoC 2026 — Lumen + Xarray Integration prototype
 
-AtmosLens already contains a small bridge in [`src/atmoslens/lumen_bridge.py`](src/atmoslens/lumen_bridge.py). It does three things that point directly at the upstream problem:
+AtmosLens directly prototypes the first steps of the [HoloViz GSoC 2026 "Lumen + Xarray Integration" project](https://github.com/holoviz/holoviz/wiki/2026-GSoC-Project-List) (HIGH priority, 350 hours):
 
-- introspects xarray dims, coords, and variables
-- represents the analysis as explicit transform steps
-- serializes the request as a query-spec-like structure
+> *"Explore Lumen Source abstractions, prototype a minimal XarraySource, evaluate xarray-sql query translation approaches."*
 
-That is the start of an `XarraySource` story, not a fake extra module. The app hits a real architectural boundary: the workflow is naturally pipeline-based, but the source is still an xarray dataset.
+### `AtmosXarraySource` — real `lumen.sources.Source` subclass
 
-The HoloViz umbrella repo describes its core projects as `Panel`, `hvPlot`, `HoloViews`, `GeoViews`, `Datashader`, `Lumen`, `Colorcet`, and `Param`; AtmosLens now uses all of those except that Lumen is intentionally applied as a bridge around tabular pipeline outputs rather than as the primary app shell, because the missing upstream piece is first-class xarray support. The umbrella repo also describes itself as an entry point for workflows that combine multiple HoloViz tools in a single application, which is exactly the role AtmosLens is playing here. Sources: [holoviz/holoviz](https://github.com/holoviz/holoviz), [README lines 277-309](https://github.com/holoviz/holoviz#readme).
+[`src/atmoslens/xarray_source.py`](src/atmoslens/xarray_source.py) contains `AtmosXarraySource`, a concrete `lumen.sources.Source` subclass that wraps the live `xarray.Dataset` and answers queries via **coordinate operations** — not row predicates:
+
+```python
+from atmoslens.xarray_source import AtmosXarraySource
+import lumen.sources
+
+assert issubclass(AtmosXarraySource, lumen.sources.Source)  # ✅ real Source subclass
+
+source = AtmosXarraySource(dataset=ds)
+
+# Tables = xarray data variables
+source.get_tables()          # ['pm2_5', 'nitrogen_dioxide', 'ozone', 'european_aqi']
+
+# Schema exposes coordinate ranges (not column types) — the design gap made explicit
+source.get_schema('pm2_5')   # {'dims': ['time', 'lat', 'lon'], 'coords': {'time': {'start': ..., 'end': ..., 'n': 48}, ...}}
+
+# get() operates on labeled axes, not row filters
+df = source.get('pm2_5', lat_min=53.25, lat_max=53.45, time_start='2026-03-26T06:00')
+```
+
+### SQL via DuckDB — xarray-sql integration
+
+[`src/atmoslens/sql_bridge.py`](src/atmoslens/sql_bridge.py) demonstrates SQL-like querying on xarray data via DuckDB, matching the GSoC spec's *"integration with xarray-sql or similar mechanisms"*:
+
+```sql
+-- Executed against a DuckDB in-memory table registered from an xarray slice:
+SELECT time, lat, lon, pm2_5
+FROM forecast
+WHERE time BETWEEN '2026-03-26T00:00' AND '2026-03-27T00:00'
+  AND lat BETWEEN 53.242 AND 53.367
+  AND pm2_5 > 3.6
+ORDER BY pm2_5 DESC
+LIMIT 20
+```
+
+### Design gap made explicit
+
+| Today (AtmosXarraySource prototype) | Needed in upstream Lumen |
+|--------------------------------------|--------------------------|
+| `get()` returns `pd.DataFrame` (flattened after slicing) | Pipeline stages pass `xr.DataArray` natively |
+| `get_schema()` returns coord ranges as a dict | Lumen planner understands N-dimensional schemas |
+| SQL via DuckDB over a flattened slice | `xarray-sql` in the Source layer |
+| Coordinate queries via keyword args | Declarative transform spec for xarray ops |
+
+The **Lumen Bridge** tab in the running app shows all of this interactively: `AtmosXarraySource` summary, visual pipeline steps, the live DuckDB SQL query, and the design gap narrative.
 
 ![Lumen bridge preview](assets/lumen-bridge-preview.svg)
 
@@ -146,7 +188,9 @@ The fetch path intentionally builds a small regular grid around a real metro reg
 - [`src/atmoslens/lumen_support.py`](src/atmoslens/lumen_support.py): Lumen `Pipeline` helpers over AtmosLens outputs
 - [`src/atmoslens/state.py`](src/atmoslens/state.py): Param-based reactive state
 - [`src/atmoslens/views.py`](src/atmoslens/views.py): app layout and cards
-- [`src/atmoslens/lumen_bridge.py`](src/atmoslens/lumen_bridge.py): xarray-to-pipeline bridge prototype
+- [`src/atmoslens/xarray_source.py`](src/atmoslens/xarray_source.py): `AtmosXarraySource(lumen.sources.Source)` — GSoC prototype XarraySource
+- [`src/atmoslens/sql_bridge.py`](src/atmoslens/sql_bridge.py): DuckDB SQL querying on xarray slices (xarray-sql integration demo)
+- [`src/atmoslens/lumen_bridge.py`](src/atmoslens/lumen_bridge.py): xarray schema introspection and query serialisation
 - [`notebooks/`](notebooks): exploration, logic validation, bridge prototyping
 - [`tests/`](tests): focused tests around thresholds, recommendations, exposure, and bridge serialization
 
@@ -158,16 +202,19 @@ The fetch path intentionally builds a small regular grid around a real metro reg
 
 Current local status:
 
-- `22 passed` on Python `3.12.12`
+- `250 passed` on Python `3.12.12`
+- includes 26 dedicated tests for `AtmosXarraySource` and `sql_bridge` (Lumen Source subclass, DuckDB queries, xarray pipeline)
 - app object verified by importing `build_app()` and constructing the `FastListTemplate`
-- end-to-end smoke test passes: search, fetch, activity, route, matrix, bridge, lumen pipelines, map frame
+- end-to-end smoke test: search, fetch, activity, route, matrix, bridge, lumen pipelines, map frame, XarraySource queries
 
 ## Demo framing for HoloViz / GSoC
 
 AtmosLens is not trying to be a complete air-quality platform. It is a convincing HoloViz artifact that shows:
 
-- real xarray-backed scientific data
-- visible use of the HoloViz ecosystem surfaced through `holoviz/holoviz`
-- a non-trivial decision layer on top of the data
-- scenario-level reasoning across multiple health profiles and activities at the same place
-- a clear path toward upstream Lumen work on xarray-native sources and transforms
+- real xarray-backed scientific data (live Open-Meteo forecast, NetCDF, `time × lat × lon` grid)
+- visible use of the full HoloViz ecosystem: Panel, HoloViews, GeoViews, hvPlot, Datashader, Lumen, Param, Colorcet
+- a non-trivial decision layer: health profiles, activity types, threshold scoring, route exposure ranking
+- scenario-level reasoning across multiple health profiles and activities at the same location
+- **a working `AtmosXarraySource(lumen.sources.Source)` prototype** — the exact first step of the GSoC project
+- **DuckDB SQL querying on xarray slices** — the xarray-sql integration the GSoC spec describes
+- **explicit pipeline steps** rendered visually in the Lumen Bridge tab

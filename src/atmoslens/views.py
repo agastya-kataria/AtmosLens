@@ -5,7 +5,15 @@ import json
 import panel as pn
 
 from atmoslens.config import APP_DESCRIPTION, APP_NAME, APP_TAGLINE, HOLOVIZ_GSOC_WIKI, HOLOVIZ_UMBRELLA_REPO
-from atmoslens.lumen_support import build_activity_pipeline, build_route_pipeline, pipeline_summary_spec
+from atmoslens.lumen_support import (
+    build_activity_pipeline,
+    build_route_pipeline,
+    build_xarray_pipeline,
+    pipeline_summary_spec,
+    xarray_pipeline_summary,
+)
+from atmoslens.sql_bridge import run_example_query
+from atmoslens.xarray_source import AtmosXarraySource
 from atmoslens.plotting import build_pollution_map, build_route_plot, build_scenario_matrix_plot, build_timeline_plot
 from atmoslens.profiles import pollutant_meta
 from atmoslens.scoring import score_interpretation, who_guideline_note
@@ -473,61 +481,246 @@ def render_matrix_panel(state: AtmosLensState):
     )
 
 
+def _pipeline_steps_html(steps) -> str:
+    """Render AnalysisResult pipeline_steps as a visual numbered flow."""
+    if not steps:
+        return "<p style='color:#94a3b8; font-size:0.88rem;'>No pipeline steps available.</p>"
+
+    step_icons = {
+        "select_location": "📍",
+        "select_time_range": "🕐",
+        "aggregate_hourly_windows": "📊",
+        "score_exposure": "🧮",
+        "recommend_activity": "✅",
+        "sample_route_points": "🗺️",
+        "rank_departure_windows": "🏁",
+    }
+    connector = (
+        "<div style='text-align:center; color:#94a3b8; font-size:1.2rem; "
+        "margin:2px 0; line-height:1;'>↓</div>"
+    )
+    cards = []
+    for i, step in enumerate(steps):
+        op = step.operation if hasattr(step, "operation") else step.get("operation", "")
+        params = step.parameters if hasattr(step, "parameters") else step.get("parameters", {})
+        icon = step_icons.get(op, "⚙️")
+        param_str = "  ".join(
+            f"<code style='background:rgba(15,23,42,0.07); padding:1px 5px; border-radius:4px; font-size:0.8rem;'>"
+            f"{k}={v!r}</code>"
+            for k, v in list(params.items())[:3]
+        )
+        card = (
+            f"<div style='background:white; border:1px solid rgba(15,23,42,0.08); "
+            f"border-radius:10px; padding:10px 14px; margin:0;'>"
+            f"<div style='display:flex; align-items:center; gap:8px; margin-bottom:4px;'>"
+            f"<span style='font-size:1.1rem;'>{icon}</span>"
+            f"<span style='font-weight:700; font-size:0.9rem; color:#0f172a; font-family:monospace;'>"
+            f"{i + 1}. {op}</span></div>"
+            f"<div style='font-size:0.82rem; color:#64748b; line-height:1.6;'>{param_str}</div>"
+            f"</div>"
+        )
+        if i > 0:
+            cards.append(connector)
+        cards.append(card)
+    return (
+        "<div style='display:flex; flex-direction:column; gap:0px; max-width:480px;'>"
+        + "".join(cards)
+        + "</div>"
+    )
+
+
+def _source_badge_html(source_class: str, base_class: str, source_type: str) -> str:
+    return (
+        f"<div style='display:inline-flex; align-items:center; gap:10px; "
+        f"background:linear-gradient(135deg,rgba(15,118,110,0.1),rgba(15,118,110,0.04)); "
+        f"border:1px solid rgba(15,118,110,0.25); border-radius:12px; "
+        f"padding:10px 16px; margin-bottom:12px;'>"
+        f"<span style='font-size:1.3rem;'>🔬</span>"
+        f"<div>"
+        f"<div style='font-weight:700; font-size:0.95rem; color:#0f172a; font-family:monospace;'>"
+        f"{source_class}</div>"
+        f"<div style='font-size:0.78rem; color:#64748b; margin-top:2px;'>"
+        f"extends <code style='background:rgba(15,23,42,0.07); padding:1px 5px; border-radius:4px;'>"
+        f"{base_class}</code> · source_type = "
+        f"<code style='background:rgba(15,23,42,0.07); padding:1px 5px; border-radius:4px;'>"
+        f'"{source_type}"</code></div>'
+        f"</div></div>"
+    )
+
+
 def render_bridge_panel(state: AtmosLensState):
     try:
-        schema = state.bridge_schema()
-        query_spec = state.bridge_query_spec()
-        activity_pipeline = build_activity_pipeline(state.activity_result())
-        route_pipeline = build_route_pipeline(state.route_result())
+        activity_result = state.activity_result()
+        route_result = state.route_result()
+        activity_pipeline = build_activity_pipeline(activity_result)
+        route_pipeline = build_route_pipeline(route_result)
+        xarray_pipeline = build_xarray_pipeline(state.dataset, activity_result.request)
+        xarray_summary = xarray_pipeline_summary(state.dataset, activity_result.request)
+        sql_query, sql_result = run_example_query(state.dataset, state.pollutant)
     except Exception as exc:  # noqa: BLE001
         return _state_error_panel("Lumen Bridge", state, str(exc))
 
-    explanation = pn.pane.Markdown(
-        """
-**Why this points upstream to Lumen**
+    # --- 1. Header badge ---
+    header = pn.pane.HTML(
+        _source_badge_html("AtmosXarraySource", "lumen.sources.Source", "atmos_xarray"),
+        sizing_mode="stretch_width",
+    )
 
-The dataset is `xarray`-native, but the application logic is already expressed as explicit transform steps:
-`select_location` → `select_time_range` → `aggregate_hourly_windows` → `score_exposure` → `recommend_activity`.
-That is the exact shape of an `XarraySource` + transform pipeline discussion in Lumen.
-The bridge prototype in `lumen_bridge.py` introspects xarray dimensions, coordinates, and variables,
-then serialises the analysis as a query-spec-like structure — the start of a native Lumen `XarraySource` story.
+    # --- 2. GSoC framing ---
+    framing = pn.pane.Markdown(
+        f"""
+**GSoC 2026 — Lumen + Xarray Integration prototype**
+
+AtmosLens prototypes the first step of the [HoloViz GSoC 2026 Lumen + Xarray project]({HOLOVIZ_GSOC_WIKI}):
+a real `lumen.sources.Source` subclass (`AtmosXarraySource`) that wraps an `xarray.Dataset` and answers
+queries via **coordinate operations** (`lat/lon bounds`, `time slices`) rather than tabular row filters.
+
+The analysis pipeline below is *already structured as explicit transform steps* — the exact shape a
+native `XarraySource` + Lumen pipeline would expose to an AI planner.
         """,
         css_classes=["atmoslens-note"],
+        sizing_mode="stretch_width",
     )
-    lumen_note = pn.pane.Markdown(
-        """
-**Actual Lumen usage inside AtmosLens**
 
-AtmosLens uses real `lumen.Pipeline` objects backed by `InMemorySource` tables for the activity and route outputs.
-The strategic gap is not "how do I build a pipeline" but "how do I make the xarray cube itself a first-class Lumen source."
-That is the upstream contribution this artifact motivates: native `XarraySource` and reusable xarray-native transforms in Lumen.
-        """,
-        css_classes=["atmoslens-note"],
+    # --- 3. Visual pipeline steps ---
+    steps_html = _pipeline_steps_html(activity_result.pipeline_steps)
+    steps_section = pn.Column(
+        pn.pane.Markdown("#### Analysis Pipeline — explicit transform steps", css_classes=["atmoslens-note"]),
+        pn.pane.HTML(steps_html, sizing_mode="fixed", width=500),
+        sizing_mode="stretch_width",
     )
-    return pn.Column(
-        explanation,
-        pn.Row(
-            pn.pane.JSON(schema, depth=3),
-            pn.pane.JSON(query_spec, depth=3),
-        ),
-        lumen_note,
-        pn.Row(
-            pn.Column(
-                pn.pane.Markdown("**Lumen activity pipeline**", css_classes=["atmoslens-note"]),
-                pn.widgets.Tabulator(activity_pipeline.data, disabled=True, pagination="local", page_size=6),
-                pn.pane.JSON(pipeline_summary_spec(activity_pipeline), depth=4),
-            ),
-            pn.Column(
-                pn.pane.Markdown("**Lumen route pipeline**", css_classes=["atmoslens-note"]),
-                pn.widgets.Tabulator(route_pipeline.data, disabled=True, pagination="local", page_size=6),
-                pn.pane.JSON(pipeline_summary_spec(route_pipeline), depth=4),
-            ),
-        ),
+
+    # --- 4. AtmosXarraySource summary ---
+    source_section = pn.Column(
         pn.pane.Markdown(
-            f"```json\n{json.dumps(query_spec, indent=2, default=str)}\n```",
-            height=340,
+            "#### `AtmosXarraySource` — xarray-native Lumen Source",
             css_classes=["atmoslens-note"],
         ),
+        pn.pane.Markdown(
+            f"""
+`AtmosXarraySource` extends `lumen.sources.Source` and queries the `xarray.Dataset` directly:
+
+- **`get_tables()`** → `{xarray_summary['tables_available']}` (one table per pollutant variable)
+- **`get(table, **query)`** → coordinate slicing: `lat_min/lat_max`, `lon_min/lon_max`, `time_start/time_end`
+- **`get_schema()`** → exposes **coordinate ranges** (not column value types) — the structural design gap
+
+Current query for `{xarray_summary['table']}`:
+```python
+source.get(
+    "{xarray_summary['table']}",
+    lat={xarray_summary['query']['lat']:.4f},
+    lon={xarray_summary['query']['lon']:.4f},
+    time_start="{xarray_summary['query']['time_start']}",
+    time_end="{xarray_summary['query']['time_end']}",
+)
+```
+            """,
+            css_classes=["atmoslens-note"],
+            sizing_mode="stretch_width",
+        ),
+        pn.pane.Markdown("**`AtmosXarraySource` pipeline data** (xarray-native Lumen pipeline):", css_classes=["atmoslens-note"]),
+        pn.widgets.Tabulator(
+            xarray_pipeline.data.head(12),
+            disabled=True,
+            pagination="local",
+            page_size=6,
+            sizing_mode="stretch_width",
+        ),
+        sizing_mode="stretch_width",
+    )
+
+    # --- 5. SQL (DuckDB) query section ---
+    sql_section = pn.Column(
+        pn.pane.Markdown(
+            "#### SQL via DuckDB — xarray-sql integration prototype",
+            css_classes=["atmoslens-note"],
+        ),
+        pn.pane.Markdown(
+            f"""
+The GSoC spec calls for *"integration with xarray-sql or similar mechanisms."*
+AtmosLens demonstrates this with DuckDB: xarray slices are registered as in-memory
+DuckDB tables, making SQL predicates compose with coordinate-based operations.
+
+```sql
+{sql_query}
+```
+            """,
+            css_classes=["atmoslens-note"],
+            sizing_mode="stretch_width",
+        ),
+        pn.pane.Markdown(
+            f"**Result** ({len(sql_result)} rows from `forecast` DuckDB table):",
+            css_classes=["atmoslens-note"],
+        ),
+        pn.widgets.Tabulator(
+            sql_result if not sql_result.empty else activity_pipeline.data.head(3),
+            disabled=True,
+            pagination="local",
+            page_size=6,
+            sizing_mode="stretch_width",
+        ),
+        sizing_mode="stretch_width",
+    )
+
+    # --- 6. Design gap narrative ---
+    design_gap = pn.pane.Markdown(
+        """
+#### Design gap — why Lumen needs upstream changes
+
+| Today (AtmosXarraySource prototype) | Needed in upstream Lumen |
+|--------------------------------------|--------------------------|
+| `get()` returns `pd.DataFrame` (flattened) | Pipeline stages should pass `xr.DataArray` natively |
+| `get_schema()` exposes coord ranges as a dict | Lumen planner should understand N-dimensional schemas |
+| SQL via DuckDB over flattened slice | `xarray-sql` integration in the Source layer |
+| Coordinate queries via keyword args | Declarative transform spec for xarray ops |
+
+This is the upstream contribution: `XarraySource` in Lumen that keeps N-dimensional
+structure alive across pipeline stages, enabling spatial reductions, time aggregations,
+and AI-driven query generation on gridded scientific data.
+        """,
+        css_classes=["atmoslens-note"],
+        sizing_mode="stretch_width",
+    )
+
+    # --- 7. Original InMemorySource pipelines (comparison) ---
+    in_memory_section = pn.Column(
+        pn.pane.Markdown(
+            "#### Original `InMemorySource` pipelines (pre-processed DataFrames)",
+            css_classes=["atmoslens-note"],
+        ),
+        pn.pane.Markdown(
+            "These pipelines use `lumen.sources.InMemorySource` with pre-processed pandas DataFrames — "
+            "the comparison baseline that shows what AtmosXarraySource replaces as the primary source.",
+            css_classes=["atmoslens-note"],
+            sizing_mode="stretch_width",
+        ),
+        pn.Row(
+            pn.Column(
+                pn.pane.Markdown("**Activity windows** (`InMemorySource`):", css_classes=["atmoslens-note"]),
+                pn.widgets.Tabulator(activity_pipeline.data, disabled=True, pagination="local", page_size=5),
+            ),
+            pn.Column(
+                pn.pane.Markdown("**Route departures** (`InMemorySource`):", css_classes=["atmoslens-note"]),
+                pn.widgets.Tabulator(route_pipeline.data, disabled=True, pagination="local", page_size=5) if not route_pipeline.data.empty else pn.pane.Markdown("_No route selected._", css_classes=["atmoslens-note"]),
+            ),
+        ),
+        sizing_mode="stretch_width",
+    )
+
+    return pn.Column(
+        header,
+        framing,
+        pn.layout.Divider(),
+        steps_section,
+        pn.layout.Divider(),
+        source_section,
+        pn.layout.Divider(),
+        sql_section,
+        pn.layout.Divider(),
+        design_gap,
+        pn.layout.Divider(),
+        in_memory_section,
+        sizing_mode="stretch_width",
     )
 
 

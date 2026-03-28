@@ -17,6 +17,7 @@ dependencies = [
   "cartopy>=0.24,<0.25",
   "colorcet>=3.1,<3.2",
   "datashader>=0.18,<0.19",
+  "duckdb>=1.1,<2",
   "geoviews>=1.14,<1.15",
   "holoviews>=1.21,<1.22",
   "hvplot>=0.12,<0.13",
